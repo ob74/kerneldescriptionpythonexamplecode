@@ -1,0 +1,67 @@
+// Automatically generated kernel configuration
+// Kernel: Example
+
+#ifndef __KERNEL_CONFIG_H__
+#define __KERNEL_CONFIG_H__
+
+#include <stdint.h>
+
+// KernelSize configuration
+#define PEG_X_SIZE 2
+#define PEG_Y_SIZE 2
+
+// InputChannel configuration
+typedef struct MyStruct {
+    uint32_t field1;
+    uint64_t field2;
+} MyStruct;
+
+#define INPUTCHANNEL_BUFFER_SIZE 16384
+#define INPUTCHANNEL_NUM_BUFFERS 2
+#define INPUTCHANNEL_ELEMENT_TYPE MyStruct
+#define INPUTCHANNEL_ELEMENTS_PER_BUFFER 1365
+
+// DataSet1 configuration
+#define DATASET1_ELEMENT_SIZE 8
+#define DATASET1_ELEMENTS 1000
+#define DATASET1_MSS_DISTRIBUTED 1
+#define DATASET1_START_ADDR0 0
+#define DATASET1_LEN0 4000
+#define DATASET1_LAST_MSS_LEN0 4000
+#define DATASET1_START_ADDR1 0
+#define DATASET1_LEN1 4000
+#define DATASET1_LAST_MSS_LEN1 4000
+
+// Resource allocations
+// Resources for InputChannel
+#define INPUTCHANNEL_ADDR0 0x10000000
+#define INPUTCHANNEL_SIZE0 32768
+#define INPUTCHANNEL_END0 0x10008000
+
+// Resources for DataSet1
+#define DATASET1_ADDR0 0x10008000
+#define DATASET1_SIZE0 1000
+#define DATASET1_END0 0x100083e8
+#define DATASET1_ADDR1 0x100083e8
+#define DATASET1_SIZE1 1000
+#define DATASET1_END1 0x100087d0
+#define DATASET1_ADDR2 0x100087d0
+#define DATASET1_SIZE2 1000
+#define DATASET1_END2 0x10008bb8
+#define DATASET1_ADDR3 0x10008bb8
+#define DATASET1_SIZE3 1000
+#define DATASET1_END3 0x10008fa0
+#define DATASET1_ADDR4 0x10008fa0
+#define DATASET1_SIZE4 1000
+#define DATASET1_END4 0x10009388
+#define DATASET1_ADDR5 0x10009388
+#define DATASET1_SIZE5 1000
+#define DATASET1_END5 0x10009770
+#define DATASET1_ADDR6 0x10009770
+#define DATASET1_SIZE6 1000
+#define DATASET1_END6 0x10009b58
+#define DATASET1_ADDR7 0x10009b58
+#define DATASET1_SIZE7 1000
+#define DATASET1_END7 0x10009f40
+
+#endif // __KERNEL_CONFIG_H__
