@@ -67,6 +67,24 @@ class Application:
             # Destination address (4 bytes)
             result.extend(vrd["dst_addr"].to_bytes(4, byteorder='little'))
 
+        # Add PM binaries
+        for pm_binary in bird_sequence.get("PM_BINARIES", []):
+            # Type = 3 for PM binary
+            result.extend(b'\x03')
+            # Get binary data and destination addresses
+            binary_data = pm_binary["data"]
+            dst_addrs = pm_binary["dst_addrs"]
+            # Length = binary size + num_destinations * 4 + 4 (for num_destinations)
+            total_length = len(binary_data) + len(dst_addrs) * 4 + 4
+            result.extend(total_length.to_bytes(4, byteorder='little'))
+            # Number of destination addresses
+            result.extend(len(dst_addrs).to_bytes(4, byteorder='little'))
+            # Destination addresses
+            for addr in dst_addrs:
+                result.extend(addr.to_bytes(4, byteorder='little'))
+            # Binary data
+            result.extend(binary_data)
+
         return bytes(result)
 
     def deploy(self) -> Dict[str, Any]:
@@ -78,14 +96,23 @@ class Application:
                 - apb_list: List of all APB settings
                 - bird_sequence: Combined BIRD sequence for all kernels
                 - basic_sequence: Combined BASIC sequence for all kernels
+                
+        Raises:
+            RuntimeError: If any kernel is not built (no PM binary set)
         """
+        # First verify all kernels are built
+        for kernel_name, (kernel, _) in self.kernels.items():
+            if not kernel.is_built:
+                raise RuntimeError(f"Kernel {kernel_name} is not built. Set PM binary before deployment.")
+        
         result = {
             "h_files": {},
             "apb_list": [],
             "bird_sequence": {
                 "APB": [],
                 "MSS_FIXED": [],
-                "MSS_VRD": []
+                "MSS_VRD": [],
+                "PM_BINARIES": []
             }
         }
         
@@ -94,15 +121,17 @@ class Application:
             kernel.allocate_resources()
             result["h_files"][kernel_name] = kernel.generate_h_file_content()
             
-            # Generate APB settings for each location
+            # Generate APB settings and BIRD sequence for each location
             for location in locations:
+                # Get APB settings
                 result["apb_list"].extend(kernel.generate_apb_settings(location))
-            
-            # Generate and combine BIRD sequence
-            bird_seq = kernel.generate_bird_sequence(location)
-            result["bird_sequence"]["APB"].extend(bird_seq["APB"])
-            result["bird_sequence"]["MSS_FIXED"].extend(bird_seq["MSS_FIXED"])
-            result["bird_sequence"]["MSS_VRD"].extend(bird_seq["MSS_VRD"])
+                
+                # Generate and combine BIRD sequence
+                bird_seq = kernel.generate_bird_sequence(location)
+                result["bird_sequence"]["APB"].extend(bird_seq["APB"])
+                result["bird_sequence"]["MSS_FIXED"].extend(bird_seq["MSS_FIXED"])
+                result["bird_sequence"]["MSS_VRD"].extend(bird_seq["MSS_VRD"])
+                result["bird_sequence"]["PM_BINARIES"].append(bird_seq["PM_BINARY"])
         
         # Generate BASIC sequence from combined BIRD sequence
         result["basic_sequence"] = self.generate_basic_sequence(result["bird_sequence"])

@@ -17,6 +17,8 @@ class Kernel:
         self.name = name
         self.size_component = KernelSizeComponent(size)
         self.allocated = False
+        self.is_built = False
+        self.pm_binary: Optional[bytes] = None
         self.io_channels: List[IOChannel] = []
         self.vrd_components: List[VariableResidentData] = []
         self.other_components: List[HWComponent] = []
@@ -129,16 +131,59 @@ class Kernel:
 
         return apb_settings
 
+    def set_pm_binary(self, binary: bytes):
+        """Set the PM binary for this kernel.
+        
+        Args:
+            binary: Bytes array containing the kernel's PM binary code
+        """
+        self.pm_binary = binary
+        self.is_built = True
+
     def generate_bird_sequence(self, location: KernelLocation) -> Dict[str, Any]:
-        """Generate BIRD sequence for kernel initialization"""
+        """Generate BIRD sequence for kernel initialization at a specific location.
+        
+        Args:
+            location: KernelLocation specifying where the kernel is placed
+            
+        Returns:
+            Dict containing APB settings, MSS_FIXED data, MSS_VRD data, and PM binary
+        
+        Raises:
+            RuntimeError: If kernel is not built (no PM binary set)
+        """
+        if not self.is_built:
+            raise RuntimeError(f"Kernel {self.name} is not built. Set PM binary before deployment.")
+
         # Allocate resources first
         self.allocate_resources()
+
+        # Calculate destination addresses for all PEs and vcores
+        dst_addrs = []
+        if self.size_component.size == KernelSize.ONE_VCORE:
+            # For vcore kernels, just use the specific vcore
+            base_addr = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
+            if location.is_vcore:
+                dst_addrs.append(base_addr + location.vcore * 0x100)
+        else:
+            # For regular kernels, include all PEs in the kernel area
+            kernel_x, kernel_y = self.size_component.get_dimensions()
+            for x in range(location.x, location.x + kernel_x):
+                for y in range(location.y, location.y + kernel_y):
+                    base_addr = 0x50000000 + (x * 0x10000) + (y * 0x1000)
+                    # Add all 4 vcores for each PE
+                    for vcore in range(4):
+                        dst_addrs.append(base_addr + vcore * 0x100)
 
         # Create BIRD sequence
         bird = {
             "APB": self.generate_apb_settings(location),
             "MSS_FIXED": [],
-            "MSS_VRD": []
+            "MSS_VRD": [],
+            "PM_BINARY": {
+                "dst_addrs": dst_addrs,
+                "data": self.pm_binary
+            }
         }
 
         # Add VRD entries
