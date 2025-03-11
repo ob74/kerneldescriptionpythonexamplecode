@@ -67,23 +67,23 @@ class Application:
             # Destination address (4 bytes)
             result.extend(vrd["dst_addr"].to_bytes(4, byteorder='little'))
 
-        # Add PM binaries
+        # Add PM binaries as DMA write commands
         for pm_binary in bird_sequence.get("PM_BINARIES", []):
-            # Type = 3 for PM binary
-            result.extend(b'\x03')
-            # Get binary data and destination addresses
             binary_data = pm_binary["data"]
-            dst_addrs = pm_binary["dst_addrs"]
-            # Length = binary size + num_destinations * 4 + 4 (for num_destinations)
-            total_length = len(binary_data) + len(dst_addrs) * 4 + 4
-            result.extend(total_length.to_bytes(4, byteorder='little'))
-            # Number of destination addresses
-            result.extend(len(dst_addrs).to_bytes(4, byteorder='little'))
-            # Destination addresses
-            for addr in dst_addrs:
-                result.extend(addr.to_bytes(4, byteorder='little'))
-            # Binary data
-            result.extend(binary_data)
+            data_length = len(binary_data)
+            
+            # Generate a DMA write command for each destination address
+            for dst_addr in pm_binary["dst_addrs"]:
+                # Type = 4 for DMA write
+                result.extend(b'\x04')
+                # Length = data length + 8 (4 for dst_addr + 4 for data_length)
+                result.extend((data_length + 8).to_bytes(4, byteorder='little'))
+                # Destination address (4 bytes)
+                result.extend(dst_addr.to_bytes(4, byteorder='little'))
+                # Data length (4 bytes)
+                result.extend(data_length.to_bytes(4, byteorder='little'))
+                # Binary data
+                result.extend(binary_data)
 
         return bytes(result)
 
