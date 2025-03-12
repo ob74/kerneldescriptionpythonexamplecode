@@ -4,6 +4,8 @@ from hw_components import HWComponent, KernelSizeComponent, IOChannel, VariableR
 from kernel_types import KernelSize, KernelLocation
 from resource_allocators import MemoryAllocator
 
+VCORE_PM = 0
+VCORE_PM_SIZE = 0x4000
 
 # Kernel class (Stage 1 - Kernel Definition)
 class Kernel:
@@ -140,6 +142,26 @@ class Kernel:
         self.pm_binary = binary
         self.is_built = True
 
+    @classmethod
+    def vcore_addr(cls, x: int, y: int, vcore_num: int) -> int:
+        """Calculate the vcore address for a given PE location and vcore number.
+        
+        Args:
+            x: X coordinate of the PE (0-15)
+            y: Y coordinate of the PE (0-15)
+            vcore_num: Vcore number (0-3)
+            
+        Returns:
+            int: The calculated vcore address
+            
+        Raises:
+            AssertionError: If coordinates or vcore number are out of range
+        """
+        assert 0 <= x < 16
+        assert 0 <= y < 16
+        assert 0 <= vcore_num < 4
+        return (x << 24) | (y << 20) | (vcore_num << 18)
+
     def generate_bird_sequence(self, location: KernelLocation) -> Dict[str, Any]:
         """Generate BIRD sequence for kernel initialization at a specific location.
         
@@ -162,18 +184,14 @@ class Kernel:
         dst_addrs = []
         if self.size_component.size == KernelSize.ONE_VCORE:
             # For vcore kernels, just use the specific vcore
-            base_addr = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
-            if location.is_vcore:
-                dst_addrs.append(base_addr + location.vcore * 0x100)
+            dst_addrs.append(Kernel.vcore_addr(location.x, location.y, location.vcore) + VCORE_PM)
         else:
             # For regular kernels, include all PEs in the kernel area
             kernel_x, kernel_y = self.size_component.get_dimensions()
-            for x in range(location.x, location.x + kernel_x):
-                for y in range(location.y, location.y + kernel_y):
-                    base_addr = 0x50000000 + (x * 0x10000) + (y * 0x1000)
-                    # Add all 4 vcores for each PE
-                    for vcore in range(4):
-                        dst_addrs.append(base_addr + vcore * 0x100)
+            dst_addrs.extend([Kernel.vcore_addr(x, y, vcore) + VCORE_PM 
+                            for x in range(location.x, location.x + kernel_x)
+                            for y in range(location.y, location.y + kernel_y)
+                            for vcore in range(0,4)])
 
         # Create BIRD sequence
         bird = {
