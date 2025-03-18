@@ -102,8 +102,8 @@ class Application:
         """
         # First verify all kernels are built
         for kernel_name, (kernel, _) in self.kernels.items():
-            if not kernel.is_built:
-                raise RuntimeError(f"Kernel {kernel_name} is not built. Set PM binary before deployment.")
+            if len(kernel.binaries) == 0:
+                raise RuntimeError(f"Kernel {kernel_name} is not built. Set kernel binary before deployment.")
         
         result = {
             "h_files": {},

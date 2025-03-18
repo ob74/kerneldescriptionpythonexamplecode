@@ -3,6 +3,7 @@ from typing import Dict, List, Any, Tuple, Optional
 from hw_components import HWComponent, KernelSizeComponent, IOChannel, VariableResidentData
 from kernel_types import KernelSize, KernelLocation
 from resource_allocators import MemoryAllocator
+from kernel_binary_parser import KernelBinary
 
 VCORE_PM = 0
 VCORE_PM_SIZE = 0x4000
@@ -20,7 +21,7 @@ class Kernel:
         self.size_component = KernelSizeComponent(size)
         self.allocated = False
         self.is_built = False
-        self.pm_binary: Optional[bytes] = None
+        self.binaries: List[KernelBinaryType] = []
         self.io_channels: List[IOChannel] = []
         self.vrd_components: List[VariableResidentData] = []
         self.other_components: List[HWComponent] = []
@@ -35,6 +36,14 @@ class Kernel:
 
     def add_component(self, component: HWComponent):
         self.other_components.append(component)
+
+    def add_binary(self, binary: KernelBinary):
+        """Add a binary (PM, DM, VM) to this kernel.
+        
+        Args:
+            binary: KernelBinaryType instance containing the binary data
+        """
+        self.binaries.append(binary)
 
     def allocate_resources(self):
         """Allocate resources for all components"""
@@ -133,15 +142,6 @@ class Kernel:
 
         return apb_settings
 
-    def set_pm_binary(self, binary: bytes):
-        """Set the PM binary for this kernel.
-        
-        Args:
-            binary: Bytes array containing the kernel's PM binary code
-        """
-        self.pm_binary = binary
-        self.is_built = True
-
     @classmethod
     def vcore_addr(cls, x: int, y: int, vcore_num: int) -> int:
         """Calculate the vcore address for a given PE location and vcore number.
@@ -169,13 +169,13 @@ class Kernel:
             location: KernelLocation specifying where the kernel is placed
             
         Returns:
-            Dict containing APB settings, MSS_FIXED data, MSS_VRD data, and PM binary
+            Dict containing APB settings, MSS_FIXED data, MSS_VRD data, and binaries
         
         Raises:
             RuntimeError: If kernel is not built (no PM binary set)
         """
-        if not self.is_built:
-            raise RuntimeError(f"Kernel {self.name} is not built. Set PM binary before deployment.")
+        if len(self.binaries) == 0:
+            raise RuntimeError(f"Kernel {self.name} is not built. Add PM binary before deployment.")
 
         # Allocate resources first
         self.allocate_resources()
@@ -198,11 +198,16 @@ class Kernel:
             "APB": self.generate_apb_settings(location),
             "MSS_FIXED": [],
             "MSS_VRD": [],
-            "PM_BINARY": {
-                "dst_addrs": dst_addrs,
-                "data": self.pm_binary
-            }
+            "BINARIES": []
         }
+
+        # Add all binaries
+        for binary in self.binaries:
+            bird["BINARIES"].append({
+                "type": binary.name,
+                "dst_addrs": dst_addrs if binary.name.endswith('_PM') else [dst_addrs[0]],  # PM goes to all cores, others just to first
+                "data": binary.contents
+            })
 
         # Add VRD entries
         for vrd in self.vrd_components:

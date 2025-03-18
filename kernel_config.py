@@ -8,12 +8,16 @@ from kernel import Kernel
 from hw_components import KernelSizeComponent
 from kernel_types import KernelSize, KernelLocation
 from application import Application
+from kernel_binary_parser import KernelBinary
 
 # Create sample binaries
 # Simple binary patterns for demonstration
-g_binary = bytes([0xAA, 0xBB, 0xCC, 0xDD] * 64)  # 256 bytes for 2x2 kernel
-s_binary = bytes([0x11, 0x22, 0x33, 0x44] * 16)  # 64 bytes for vcore kernel
-large_binary = bytes([0x55, 0x66, 0x77, 0x88] * 256)  # 1024 bytes for 4x4 kernel
+g_vcore_pm = KernelBinary.from_file('./kernels/kern-gs.vcore.elf.ePM')
+g_vcore_vm = KernelBinary.from_file('./kernels/kern-gs.vcore.elf.eVM')
+g_vcore_dm = KernelBinary.from_file('./kernels/kern-gs.vcore.elf.eDMw')
+s_ncore_pm = KernelBinary.from_file('./kernels/ncore-grid.ncore.elf.ePM')
+s_ncore_dm = KernelBinary.from_file('./kernels/ncore-grid.ncore.elf.ePM')
+
 
 # Initialize kernels
 kernel_g = Kernel("G_Kernel", KernelSize.SIZE_2X2)
@@ -21,9 +25,11 @@ kernel_s = Kernel("S_Kernel", KernelSize.ONE_VCORE)
 kernel_4x4 = Kernel("G_large", KernelSize.SIZE_4X4)
 
 # Load binaries into kernels
-kernel_g.set_pm_binary(g_binary)
-kernel_s.set_pm_binary(s_binary)
-kernel_4x4.set_pm_binary(large_binary)
+kernel_g.add_binary(g_vcore_pm)
+kernel_g.add_binary(g_vcore_dm)
+kernel_s.add_binary(s_ncore_dm)
+kernel_s.add_binary(s_ncore_pm)
+kernel_4x4.add_binary(g_vcore_pm)
 
 def test_haps_g_single():
     app = Application("ExampleApp", Haps())
@@ -76,7 +82,7 @@ def example_application():
     
     # Create and add first kernel (4x4)
     kernel1 = Kernel("ExampleKernel1", KernelSize.SIZE_4X4)
-    kernel1.set_pm_binary(g_binary)
+    kernel1.add_binary(g_vcore_pm)
     # Add kernel with example locations (aligned with 4x4 grid)
     locations1 = [
         KernelLocation(0, 0),
@@ -89,7 +95,7 @@ def example_application():
         
     # Create and add a vcore kernel
     kernel2 = Kernel("ExampleKernel2", KernelSize.ONE_VCORE)
-    kernel2.set_pm_binary(s_binary)
+    kernel2.add_binary(s_ncore_pm)
     
     # Add vcore kernel with example locations
     locations2 = [
