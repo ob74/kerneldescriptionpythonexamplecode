@@ -5,7 +5,7 @@ from kernel_types import KernelSize, KernelLocation
 from resource_allocators import MemoryAllocator
 from kernel_binary_parser import KernelBinary
 from hw_resources import MemoryResource
-from bird import BirdCommandSequence
+from bird import BirdCommandSequence, NetworkType
 
 VCORE_PM = 0
 VCORE_PM_SIZE = 0x4000
@@ -162,14 +162,14 @@ class Kernel:
         assert 0 <= vcore_num < 4
         return (x << 24) | (y << 20) | (vcore_num << 18)
 
-    def generate_bird_sequence(self, location: KernelLocation) -> Dict[str, Any]:
+    def generate_bird_sequence(self, location: KernelLocation) -> List[BirdCommandSequence]:
         """Generate BIRD sequence for kernel initialization at a specific location.
         
         Args:
             location: KernelLocation specifying where the kernel is placed
             
         Returns:
-            Dict containing APB settings, MSS_FIXED data, MSS_VRD data, and binaries
+            List of BirdCommandSequence objects containing all initialization commands
         
         Raises:
             RuntimeError: If kernel is not built (no PM binary set)
@@ -193,21 +193,20 @@ class Kernel:
                             for y in range(location.y, location.y + kernel_y)
                             for vcore in range(0,4)])
 
-        # Create BIRD sequence
-        bird = {
-            "APB": self.generate_apb_settings(location),
-            "MSS_FIXED": [],
-            "MSS_VRD": [],
-            "BINARIES": []
-        }
+        sequences = []
+
+        # Add APB settings
+        sequences.extend(self.generate_apb_settings(location))
 
         # Add all binaries
         for binary in self.binaries:
-            bird["BINARIES"].append({
-                "type": binary.name,
-                "dst_addrs": dst_addrs if binary.name.endswith('_PM') else [dst_addrs[0]],  # PM goes to all cores, others just to first
-                "data": binary.contents
-            })
+            binary_seq = BirdCommandSequence(
+                description=f"Binary {binary.name} for {self.name}",
+                network_type=NetworkType.DIRECT,
+                commands=[]
+            )
+            # Add binary data as commands...
+            sequences.append(binary_seq)
 
         # Add VRD entries
         for vrd in self.vrd_components:
@@ -215,13 +214,15 @@ class Kernel:
                 resources = self.allocated_resources[vrd.name]
                 for i, resource in enumerate(resources):
                     if isinstance(resource, MemoryResource):
-                        bird["MSS_VRD"].append({
-                            "vrd_name": f"{vrd.name}_{i}",
-                            "vrd_size": resource.length,
-                            "dst_addr": resource.address
-                        })
+                        vrd_seq = BirdCommandSequence(
+                            description=f"VRD {vrd.name}_{i} for {self.name}",
+                            network_type=NetworkType.MSS_BRCST,
+                            commands=[]
+                        )
+                        # Add VRD data as commands...
+                        sequences.append(vrd_seq)
 
-        return bird
+        return sequences
 
     def save_to_json(self, output_file: str):
         """Save kernel configuration to JSON"""

@@ -65,13 +65,22 @@ class BarrierResource(HWResource):
     def __repr__(self):
         base_repr = super().__repr__()
         return f"BarrierResource(barrier_id={self.barrier_id}, {base_repr[base_repr.index('(') + 1:]}" 
+
+class AXI2AHBResource(HWResource):
     
+    def __init__(self, mode: int, reg_id: int):
+        super().__init__()
+        self.mode = mode
+        self.reg_id = reg_id
+
+    def __repr__(self):
+        base_repr = super().__repr__()
+        return f"AXI2AHBResource(mode={self.mode}, {reg_id=}, {base_repr[base_repr.index('(') + 1:]}" 
+
 class NOCBroadCastResource(HWResource):
     
-    def __init__(self, brcst_id: int, scope: ResourceScope,
-                 pe_x: Optional[int] = None, pe_y: Optional[int] = None,
-                 mss_id: Optional[int] = None):
-        super().__init__(scope, pe_x, pe_y, mss_id)
+    def __init__(self, brcst_id: int, scope: ResourceScope):
+        super().__init__(scope)
         self.brcst_id = brcst_id
 
     def __repr__(self):

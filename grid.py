@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional, Tuple, Union, Any, Set
-from hw_components import KernelSizeComponent
+from hw_components import KernelSizeComponent, BroadCastNetwork, AXI2AHB
 from kernel_types import KernelSize, KernelLocation
+from bird import NetworkType, BirdCommandSequence
 
 class Grid:
     """Represents the hardware platform grid configuration"""
@@ -11,6 +12,69 @@ class Grid:
         self.allocated_nodes: Set[Tuple[int, int]] = set()
         # Dict mapping (x, y) to set of allocated vcores
         self.allocated_vcores: Dict[Tuple[int, int], Set[int]] = {}
+        # Network components
+        self.axi2ahb_bridges: List[AXI2AHB] = []
+        self.brcst_networks: List[BroadCastNetwork] = []
+        
+    def add_axi2ahb_bridge(self, mode: int, line_id: int):
+        """Add an AXI2AHB bridge configuration.
+        
+        Args:
+            mode: Operating mode of the bridge
+            line_id: Line ID for the bridge (0-15)
+        """
+        bridge = AXI2AHB(f"axi2ahb_bridge_{line_id}", mode, line_id)
+        self.axi2ahb_bridges.append(bridge)
+        
+    def add_broadcast_network(self, network_id: int):
+        """Add a NOC broadcast network configuration.
+        
+        Args:
+            network_id: Network ID for the broadcast network (0-15)
+        """
+        network = BroadCastNetwork(f"brcst_network_{network_id}", network_id)
+        self.brcst_networks.append(network)
+        
+    def get_apb_settings(self, network_type: NetworkType) -> BirdCommandSequence:
+        """Get APB settings for a specific network type.
+        
+        Args:
+            network_type: The type of network to get settings for
+            
+        Returns:
+            BirdCommandSequence containing the APB settings for the specified network
+            
+        Raises:
+            ValueError: If network_type is not supported
+        """
+        if network_type == NetworkType.DIRECT:
+            # For direct access, we need AXI2AHB settings
+            sequence = BirdCommandSequence(
+                description="AXI2AHB Bridge Configuration",
+                network_type=NetworkType.DIRECT,
+                commands=[]
+            )
+            # Get settings from all bridges
+            for bridge in self.axi2ahb_bridges:
+                bridge_seq = bridge.get_apb_settings(KernelLocation(0, 0))  # Location doesn't matter for bridges
+                sequence.commands.extend(bridge_seq.commands)
+                
+        elif network_type in [NetworkType.MSS_BRCST, NetworkType.ALL_PE_BRCST, NetworkType.PE_ID_BRCST]:
+            # For broadcast access, we need NOC broadcast settings
+            sequence = BirdCommandSequence(
+                description="NOC Broadcast Network Configuration",
+                network_type=network_type,
+                commands=[]
+            )
+            # Get settings from all broadcast networks
+            for network in self.brcst_networks:
+                network_seq = network.get_apb_settings(KernelLocation(0, 0))  # Location doesn't matter for networks
+                sequence.commands.extend(network_seq.commands)
+                
+        else:
+            raise ValueError(f"Unsupported network type: {network_type}")
+            
+        return sequence
         
     def _is_within_bounds(self, x: int, y: int) -> bool:
         """Check if a location is within platform dimensions"""

@@ -1,6 +1,6 @@
 from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
-from hw_resources import ResourceScope, NOCBroadCastResource
+from hw_resources import ResourceScope, NOCBroadCastResource, AXI2AHBResource
 from kernel_types import (
     BufferLocationType, ChannelType, KernelSize, AllocationType,
     ResourceRequirement, MemoryRequirement, DMARequirement, BarrierRequirement, ElementField,
@@ -353,35 +353,54 @@ class VariableResidentData(HWComponent):
 class BroadCastNetwork(HWComponent):
     """Represent the NOC configuration for a specific Broadcast Network"""
 
-    def __init__(self, name: str, noc_network_id : int, ):
-        super.__init__(name)
+    def __init__(self, name: str, noc_network_id: int):
+        super().__init__(name)
         self.noc_network_id = noc_network_id
 
     def get_required_resources(self) -> List[ResourceRequirement]:
         """Returns a list of required resources"""
-        return [NOCBroadCastResource(brcst_id = self.noc_network_id, 
-                                     scope=ResourceScope.PE_GROUP, 
-                                     pe_x=0, pe_y=0)]
+        return [NOCBroadCastResource(brcst_id=self.noc_network_id, 
+                                   scope=ResourceScope.PE_GROUP, 
+                                   pe_x=0, pe_y=0)]
 
     def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
         """Returns APB settings as a BirdCommandSequence for a specific location"""
-        return BirdCommandSequence(f"{self.name} APB settings", NetworkType.DIRECT, [])
+        # Calculate base address for NOC broadcast settings
+        base_address = 0x60000000 + (self.noc_network_id * 0x1000)
+        
+        seq = BirdCommandSequence(f"NOC Broadcast Network {self.name} APB settings", NetworkType.DIRECT, [])
+        
+        # Configure network ID and enable
+        seq.add_single_command(base_address + 0x00, self.noc_network_id)  # Network ID
+        seq.add_single_command(base_address + 0x04, 1)  # Enable network
+        
+        return seq
 
 
 class AXI2AHB(HWComponent):
-    """Represent the NOC configuration for a specific Broadcast Network"""
+    """Represent the NOC configuration for a specific AXI2AHB bridge"""
 
-    def __init__(self, name: str, mode : int, line_id: int):
-        super.__init__(name)
+    def __init__(self, name: str, mode: int, line_id: int):
+        super().__init__(name)
         self.mode = mode
         self.line_id = line_id
 
     def get_required_resources(self) -> List[ResourceRequirement]:
         """Returns a list of required resources"""
-        return [AXI2AHB(line_id = self.line_id, 
-                        scope=ResourceScope.PE_GROUP, 
-                        pe_x=0, pe_y=0)]
+        return [AXI2AHBResource(line_id=self.line_id, 
+                              scope=ResourceScope.PE_GROUP, 
+                              pe_x=0, pe_y=0)]
 
     def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
         """Returns APB settings as a BirdCommandSequence for a specific location"""
-        return BirdCommandSequence(f"{self.name} APB settings", NetworkType.DIRECT, [])
+        # Calculate base address for AXI2AHB settings
+        base_address = 0x70000000 + (self.line_id * 0x1000)
+        
+        seq = BirdCommandSequence(f"AXI2AHB Bridge {self.name} APB settings", NetworkType.DIRECT, [])
+        
+        # Configure bridge mode and line ID
+        seq.add_single_command(base_address + 0x00, self.mode)  # Bridge mode
+        seq.add_single_command(base_address + 0x04, self.line_id)  # Line ID
+        seq.add_single_command(base_address + 0x08, 1)  # Enable bridge
+        
+        return seq
