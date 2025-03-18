@@ -16,7 +16,7 @@ class KernelBinary(Enum):
         self._contents = None
 
     @classmethod
-    def from_file(cls, filename: str) -> 'KernelBinaryType':
+    def from_file(cls, filename: str) -> 'KernelBinary':
         for binary_type in cls:
             if filename.endswith(binary_type.file_suffix):
                 instance = binary_type

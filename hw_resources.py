@@ -55,6 +55,7 @@ class DMAResource(HWResource):
 
 
 class BarrierResource(HWResource):
+    
     def __init__(self, barrier_id: int, scope: ResourceScope,
                  pe_x: Optional[int] = None, pe_y: Optional[int] = None,
                  mss_id: Optional[int] = None):
@@ -64,3 +65,15 @@ class BarrierResource(HWResource):
     def __repr__(self):
         base_repr = super().__repr__()
         return f"BarrierResource(barrier_id={self.barrier_id}, {base_repr[base_repr.index('(') + 1:]}" 
+    
+class NOCBroadCastResource(HWResource):
+    
+    def __init__(self, brcst_id: int, scope: ResourceScope,
+                 pe_x: Optional[int] = None, pe_y: Optional[int] = None,
+                 mss_id: Optional[int] = None):
+        super().__init__(scope, pe_x, pe_y, mss_id)
+        self.brcst_id = brcst_id
+
+    def __repr__(self):
+        base_repr = super().__repr__()
+        return f"NOCBroadCastResource(brcst_id={self.brcst_id}, {base_repr[base_repr.index('(') + 1:]}" 

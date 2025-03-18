@@ -4,6 +4,8 @@ from hw_components import HWComponent, KernelSizeComponent, IOChannel, VariableR
 from kernel_types import KernelSize, KernelLocation
 from resource_allocators import MemoryAllocator
 from kernel_binary_parser import KernelBinary
+from hw_resources import MemoryResource
+from bird import BirdCommandSequence
 
 VCORE_PM = 0
 VCORE_PM_SIZE = 0x4000
@@ -121,26 +123,24 @@ class Kernel:
         # Join all lines with newlines
         return "\n".join(lines)
 
-    def generate_apb_settings(self, location: KernelLocation) -> List[Tuple[int, int]]:
+    def generate_apb_settings(self, location: KernelLocation) -> List[BirdCommandSequence]:
         """Generate all APB settings for the kernel at a specific location.
         
         Args:
             location: KernelLocation specifying where the kernel is placed
             
         Returns:
-            List of (address, value) tuples for APB settings
+            List of BirdCommandSequence objects containing APB settings
         """
-        apb_settings = []
-
         # Get all components
         all_components = [self.size_component] + self.io_channels + self.vrd_components + self.other_components
 
         # Generate APB settings for each component
+        sequences = []
         for component in all_components:
-            component_apb = component.get_apb_settings(location)
-            apb_settings.extend(component_apb)
+            sequences.append(component.get_apb_settings(location))
 
-        return apb_settings
+        return sequences
 
     @classmethod
     def vcore_addr(cls, x: int, y: int, vcore_num: int) -> int:

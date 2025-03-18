@@ -1,11 +1,12 @@
 from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
-from hw_resources import ResourceScope
+from hw_resources import ResourceScope, NOCBroadCastResource
 from kernel_types import (
     BufferLocationType, ChannelType, KernelSize, AllocationType,
     ResourceRequirement, MemoryRequirement, DMARequirement, BarrierRequirement, ElementField,
     KernelLocation
 )
+from bird import BirdCommandSequence, NetworkType, BirdCommandType
 
 
 class HWComponent:
@@ -22,9 +23,9 @@ class HWComponent:
         """Returns definitions for .h files"""
         return {}
 
-    def get_apb_settings(self, location: KernelLocation) -> List[Tuple[int, int]]:
-        """Returns APB settings as (address, value) tuples for a specific location"""
-        return []
+    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
+        """Returns APB settings as a BirdCommandSequence for a specific location"""
+        return BirdCommandSequence(f"{self.name} APB settings", NetworkType.DIRECT, [])
 
 
 class KernelSizeComponent(HWComponent):
@@ -53,7 +54,7 @@ class KernelSizeComponent(HWComponent):
             "PEG_Y_SIZE": y_size
         }
 
-    def get_apb_settings(self, location: KernelLocation) -> List[Tuple[int, int]]:
+    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
         """Returns APB settings for kernel size at a specific location"""
         x_size, y_size = self.size_mapping[self.size]
         
@@ -62,10 +63,10 @@ class KernelSizeComponent(HWComponent):
         if location.is_vcore:
             base_address += location.vcore * 0x100
         
-        return [
-            (base_address + 0x00, x_size),  # MEM_MAPPING.size_x
-            (base_address + 0x04, y_size)   # MEM_MAPPING.size_y
-        ]
+        seq = BirdCommandSequence(f"Kernel Size APB settings for {self.name}", NetworkType.DIRECT, [])
+        seq.add_single_command(base_address + 0x00, x_size)  # MEM_MAPPING.size_x
+        seq.add_single_command(base_address + 0x04, y_size)  # MEM_MAPPING.size_y
+        return seq
 
     def get_dimensions(self) -> Tuple[int, int]:
         """Get the x and y dimensions of the kernel"""
@@ -186,32 +187,32 @@ class IOChannel(HWComponent):
 
         return defs
 
-    def get_apb_settings(self, location: KernelLocation) -> List[Tuple[int, int]]:
+    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
         """Returns APB settings for IO channel at a specific location"""
         # Calculate base address for this component at this location
         base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
         if location.is_vcore:
             base_address += location.vcore * 0x100
         
-        settings = []
+        seq = BirdCommandSequence(f"IO Channel APB settings for {self.name}", NetworkType.DIRECT, [])
 
         # Channel type configuration
         channel_type_val = self.channel_type.value
-        settings.append((base_address + 0x100, channel_type_val.__hash__() & 0xFFFFFFFF))
+        seq.add_single_command(base_address + 0x100, channel_type_val.__hash__() & 0xFFFFFFFF)
 
         # Buffer location configuration
         if self.buffer_location == BufferLocationType.MSS000:
-            settings.append((base_address + 0x104, 0x1))
+            seq.add_single_command(base_address + 0x104, 0x1)
         elif self.buffer_location == BufferLocationType.PE00:
-            settings.append((base_address + 0x104, 0x2))
+            seq.add_single_command(base_address + 0x104, 0x2)
         elif self.buffer_location == BufferLocationType.SPREAD:
-            settings.append((base_address + 0x104, 0x3))
+            seq.add_single_command(base_address + 0x104, 0x3)
 
         # Buffer size and count
-        settings.append((base_address + 0x108, self.buffer_size))
-        settings.append((base_address + 0x10C, self.num_buffers))
+        seq.add_single_command(base_address + 0x108, self.buffer_size)
+        seq.add_single_command(base_address + 0x10C, self.num_buffers)
 
-        return settings
+        return seq
 
 
 class VariableResidentData(HWComponent):
@@ -318,18 +319,18 @@ class VariableResidentData(HWComponent):
 
         return defs
 
-    def get_apb_settings(self, location: KernelLocation) -> List[Tuple[int, int]]:
+    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
         """Returns APB settings for VRD at a specific location"""
         # Calculate base address for this component at this location
         base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
         if location.is_vcore:
             base_address += location.vcore * 0x100
             
-        settings = []
+        seq = BirdCommandSequence(f"VRD APB settings for {self.name}", NetworkType.DIRECT, [])
 
         # Element size and count
-        settings.append((base_address + 0x200, self.element_size))
-        settings.append((base_address + 0x204, self.num_elements))
+        seq.add_single_command(base_address + 0x200, self.element_size)
+        seq.add_single_command(base_address + 0x204, self.num_elements)
 
         # Allocation type
         alloc_type_val = 0
@@ -341,9 +342,46 @@ class VariableResidentData(HWComponent):
             alloc_type_val = 3
         elif self.allocation_type == AllocationType.PE_DISTRIBUTED:
             alloc_type_val = 4
-        settings.append((base_address + 0x208, alloc_type_val))
+        seq.add_single_command(base_address + 0x208, alloc_type_val)
 
         # DMA channel required
-        settings.append((base_address + 0x20C, 1 if self.dma_channel_required else 0))
+        seq.add_single_command(base_address + 0x20C, 1 if self.dma_channel_required else 0)
 
-        return settings
+        return seq
+
+
+class BroadCastNetwork(HWComponent):
+    """Represent the NOC configuration for a specific Broadcast Network"""
+
+    def __init__(self, name: str, noc_network_id : int, ):
+        super.__init__(name)
+        self.noc_network_id = noc_network_id
+
+    def get_required_resources(self) -> List[ResourceRequirement]:
+        """Returns a list of required resources"""
+        return [NOCBroadCastResource(brcst_id = self.noc_network_id, 
+                                     scope=ResourceScope.PE_GROUP, 
+                                     pe_x=0, pe_y=0)]
+
+    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
+        """Returns APB settings as a BirdCommandSequence for a specific location"""
+        return BirdCommandSequence(f"{self.name} APB settings", NetworkType.DIRECT, [])
+
+
+class AXI2AHB(HWComponent):
+    """Represent the NOC configuration for a specific Broadcast Network"""
+
+    def __init__(self, name: str, mode : int, line_id: int):
+        super.__init__(name)
+        self.mode = mode
+        self.line_id = line_id
+
+    def get_required_resources(self) -> List[ResourceRequirement]:
+        """Returns a list of required resources"""
+        return [AXI2AHB(line_id = self.line_id, 
+                        scope=ResourceScope.PE_GROUP, 
+                        pe_x=0, pe_y=0)]
+
+    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
+        """Returns APB settings as a BirdCommandSequence for a specific location"""
+        return BirdCommandSequence(f"{self.name} APB settings", NetworkType.DIRECT, [])

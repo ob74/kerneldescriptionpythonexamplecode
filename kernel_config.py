@@ -90,6 +90,9 @@ def example_application():
         KernelLocation(4, 0),
         KernelLocation(4, 4)
     ]
+    
+    print(kernel1.generate_bird_sequence(location=locations1[0]))
+    
     if not app.add_kernel(kernel1, locations1):
         raise ValueError("Invalid kernel locations for kernel1")
         

@@ -4,6 +4,7 @@ from grid import Grid
 from kernel import Kernel
 from hw_components import KernelSizeComponent
 from kernel_types import KernelSize, KernelLocation
+from bird import BirdCommandSequence
 
 # Application class (Stage 2 - Application Definition)
 class Application:
@@ -31,7 +32,7 @@ class Application:
         self.kernels[kernel.name] = (kernel, locations)
         return True
 
-    def generate_basic_sequence(self, bird_sequence: Dict[str, Any]) -> bytes:
+    def generate_basic_sequence(self, bird_sequence: BirdCommandSequence) -> bytes:
         """Generate BASIC sequence from BIRD sequence.
         
         Args:
