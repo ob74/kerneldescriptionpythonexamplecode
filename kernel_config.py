@@ -117,8 +117,13 @@ def example_application():
     except AssertionError:
         assert True
 
-    print (app.generate_bird_sequence())
-    print (app.generate_basic_sequence())
+    # Print each sequence individually
+    sequences = app.generate_bird_sequence()
+    for sequence in sequences:
+        print(sequence)
+        print()  # Add extra newline between sequences
+        
+    print(app.generate_basic_sequence())
     return 0
 
 

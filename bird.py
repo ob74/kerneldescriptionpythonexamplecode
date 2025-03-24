@@ -71,13 +71,16 @@ class BirdCommandSequence:
 
     def __str__(self) -> str:
         lines = [
+            "=" * 80,  # Separator line
             f"Command Sequence: {self.description}",
             f"Network Type: {self.network_type.value}",
+            "-" * 40,  # Sub-separator line
             "Commands:"
         ]
         
         for i, cmd in enumerate(self.commands, 1):
-            lines.append(f"\n{i}. {cmd.type.value.upper()} command to 0x{cmd.dst_addr:08X}")
+            lines.append(f"\n{i}. {cmd.type.value.upper()} command")
+            lines.append(f"   Destination: 0x{cmd.dst_addr:08X}")
             if cmd.type == BirdCommandType.SINGLE:
                 lines.append(f"   Data: 0x{cmd.data:08X}")
             else:  # DMA
@@ -86,8 +89,9 @@ class BirdCommandSequence:
                 for j in range(0, len(cmd.data), 8):
                     chunk = cmd.data[j:j+8]
                     hex_chunk = [f"0x{x:08X}" for x in chunk]
-                    lines.append(f"   {' '.join(hex_chunk)}")
+                    lines.append(f"      {' '.join(hex_chunk)}")
         
+        lines.append("=" * 80)  # Closing separator line
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
