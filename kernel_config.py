@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple, Any
 from grid import Chip, Haps
 from kernel import Kernel
 from hw_components import KernelSizeComponent
-from kernel_types import KernelSize, KernelLocation
+from kernel_types import KernelSize, KernelLocation, KernelSuperGroup
 from application import Application
 from kernel_binary_parser import KernelBinary
 
@@ -34,9 +34,9 @@ kernel_4x4.add_binary(g_vcore_pm)
 def test_haps_g_single():
     app = Application("ExampleApp", Haps())
     
-    g_locations = [KernelLocation(0, 0) ]
-
-    app.add_kernel(kernel_g, g_locations)
+    # Create a 2x2 supergroup for the 2x2 kernel at (0,0)
+    g_supergroup = KernelSuperGroup(x=0, y=0, size_x=2, size_y=2, kernel_size=KernelSize.SIZE_2X2)
+    app.add_kernel(kernel_g, g_supergroup)
         
     print(app.generate_bird_sequence())
     assert True
@@ -44,12 +44,9 @@ def test_haps_g_single():
 def test_full_chip_g_single():
     app = Application("ExampleApp", Chip())
     
-    g_locations = [KernelLocation(0, 0) ]
-    g_locations = [
-        KernelLocation(2*x, 2*y) for x in range(8) for y in range(8) 
-    ]
-
-    app.add_kernel(kernel_g, g_locations)
+    # Create a 16x16 supergroup for the 2x2 kernel at (0,0)
+    g_supergroup = KernelSuperGroup(x=0, y=0, size_x=16, size_y=16, kernel_size=KernelSize.SIZE_2X2)
+    app.add_kernel(kernel_g, g_supergroup)
         
     print(app.generate_bird_sequence())
     assert True
@@ -57,20 +54,17 @@ def test_full_chip_g_single():
 def test_haps_gs():
     app = Application("ExampleApp", Haps())
     
-    g_locations = [KernelLocation(0, 0) ]
-    s_locations = [
-        KernelLocation(2+x, y, vcore) for x in range(2) for y in range(2) for vcore in range (4)
-    ]
+    # Create a 2x2 supergroup for the 2x2 kernel at (0,0)
+    g_supergroup = KernelSuperGroup(x=0, y=0, size_x=2, size_y=2, kernel_size=KernelSize.SIZE_2X2)
+    
+    # Create a 2x2 supergroup for the vcore kernel at (2,0)
+    s_supergroup = KernelSuperGroup(x=2, y=0, size_x=2, size_y=2, kernel_size=KernelSize.ONE_VCORE)
 
-    app.add_kernel(kernel_g, g_locations)
-    app.add_kernel(kernel_s, s_locations)
+    app.add_kernel(kernel_g, g_supergroup)
+    app.add_kernel(kernel_s, s_supergroup)
         
     print(app.generate_bird_sequence())
     assert True
-
-
-
-
 
 def example_application():
     """Example showing how to create and deploy an application with different kernel types."""
@@ -82,37 +76,27 @@ def example_application():
     # Create and add first kernel (4x4)
     kernel1 = Kernel("ExampleKernel1", KernelSize.SIZE_4X4)
     kernel1.add_binary(g_vcore_pm)
-    # Add kernel with example locations (aligned with 4x4 grid)
-    locations1 = [
-        KernelLocation(0, 0),
-        KernelLocation(0, 4),
-        KernelLocation(4, 0),
-        KernelLocation(4, 4)
-    ]
     
-    print(kernel1.generate_bird_sequence(location=locations1[0]))
+    # Create a 8x8 supergroup for the 4x4 kernel at (0,0)
+    supergroup1 = KernelSuperGroup(x=0, y=0, size_x=8, size_y=8, kernel_size=KernelSize.SIZE_4X4)
     
-    app.add_kernel(kernel1, locations1)
+    print(kernel1.generate_bird_sequence(location=supergroup1.get_kernel_locations()[0]))
+    
+    app.add_kernel(kernel1, supergroup1)
         
     # Create and add a vcore kernel
     kernel2 = Kernel("ExampleKernel2", KernelSize.ONE_VCORE)
     kernel2.add_binary(s_ncore_pm)
     
-    # Add vcore kernel with example locations
-    locations2 = [
-        KernelLocation(8, 8, vcore=0),  # Using vcore 0
-        KernelLocation(8, 8, vcore=1)   # Using vcore 1 in same PE
-    ]
-    app.add_kernel(kernel2, locations2)
+    # Create a 1x1 supergroup for the vcore kernel at (8,8)
+    supergroup2 = KernelSuperGroup(x=8, y=8, size_x=1, size_y=1, kernel_size=KernelSize.ONE_VCORE)
+    app.add_kernel(kernel2, supergroup2)
     
     # Try to add another kernel that overlaps (should fail)
-    locations3 = [
-        KernelLocation(2, 2),  # This overlaps with kernel1
-        KernelLocation(8, 8)   # This overlaps with kernel2's vcores
-    ]
+    supergroup3 = KernelSuperGroup(x=2, y=2, size_x=4, size_y=4, kernel_size=KernelSize.SIZE_4X4)
     try:
         # this should fail
-        app.add_kernel(kernel1, locations3)
+        app.add_kernel(kernel1, supergroup3)
         assert False
     except AssertionError:
         assert True

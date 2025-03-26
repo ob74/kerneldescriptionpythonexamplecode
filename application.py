@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Any
 from grid import Grid
 from kernel import Kernel
 from hw_components import KernelSizeComponent
-from kernel_types import KernelSize, KernelLocation
+from kernel_types import KernelSize, KernelLocation, KernelSuperGroup
 from bird import BirdCommandSequence
 
 # Application class (Stage 2 - Application Definition)
@@ -11,18 +11,24 @@ class Application:
     def __init__(self, name: str, grid: Grid):
         self.name = name
         self.grid = grid
-        self.kernels: List[Tuple[Kernel, List[KernelLocation]]] = []
+        self.kernels: List[Tuple[Kernel, KernelSuperGroup]] = []
 
-    def add_kernel(self, kernel: Kernel, locations: List[KernelLocation]):
-        """Add a kernel at multiple locations
+    def add_kernel(self, kernel: Kernel, supergroup: KernelSuperGroup):
+        """Add a kernel at multiple locations defined by a supergroup
         
         Args:
             kernel: The kernel to add
-            locations: List of locations where the kernel should be deployed
+            supergroup: The supergroup defining where the kernel should be deployed
         """
-        for location in locations:
+        # Verify kernel size matches supergroup
+        if kernel.size_component.size != supergroup.kernel_size:
+            raise ValueError(f"Kernel size {kernel.size_component.size} does not match supergroup kernel size {supergroup.kernel_size}")
+            
+        # Allocate all locations in the supergroup
+        for location in supergroup.get_kernel_locations():
             assert self.grid.allocate_kernel(kernel.size_component, location)
-        self.kernels.append((kernel, locations))
+            
+        self.kernels.append((kernel, supergroup))
 
     def generate_basic_sequence(self) -> bytes:
         """Convert a Bird list of command sequences to bytes.
@@ -48,9 +54,9 @@ class Application:
         current_network = None
         
         # Collect all command sequences from kernels
-        for kernel, locations in self.kernels:
-            # Get kernel's BIRD sequence for each location
-            for location in locations:
+        for kernel, supergroup in self.kernels:
+            # Get kernel's BIRD sequence for each location in the supergroup
+            for location in supergroup.get_kernel_locations():
                 kernel_sequences = kernel.generate_bird_sequence(location)
                 
                 # Add all sequences from the kernel

@@ -4,12 +4,15 @@ from dataclasses import dataclass
 
 class NetworkType(Enum):
     DIRECT = "direct"
-    MSS_BRCST = "mss_broadcast"
-    ALL_PE_BRCST = "all_pe_broadcast"
-    PE_ID_BRCST = "pe_id_broadcast"
+    PEG_MSS_BRCST = "peg_mss_broadcast"
+    PEG_PE_BRCST = "peg_pe_broadcast"
+    SUPER_PE_ID_BRCST = "super_pe_id_broadcast"
+    SUPER_PE_BRCST = "super_pe_broadcast"
+    SUPER_MSS_BRCST = "super_mss_broadcast"
 
 class BirdCommandType(Enum):
     SINGLE = "single"
+    SAFE_SINGLE = "safe_single"
     DMA = "dma"
 
 @dataclass
@@ -21,6 +24,8 @@ class BirdCommand:
     def __post_init__(self):
         if self.type == BirdCommandType.SINGLE and not isinstance(self.data, int):
             raise ValueError("SINGLE command must have int data")
+        if self.type == BirdCommandType.SAFE_SINGLE and not isinstance(self.data, int):
+            raise ValueError("SAFE_SINGLE command must have int data")
         if self.type == BirdCommandType.DMA and not isinstance(self.data, list):
             raise ValueError("DMA command must have list data")
 
@@ -31,10 +36,10 @@ class BirdCommand:
         SINGLE: [type(1B)] [total_len(4B)] [dst_addr(4B)] [data(4B)]
         DMA: [type(1B)] [total_len(4B)] [dst_addr(4B)] [data_len(4B)] [data(Nx4B)]
         """
-        if self.type == BirdCommandType.SINGLE:
+        if self.type in [BirdCommandType.SINGLE, BirdCommandType.SAFE_SINGLE]:
             total_len = 13  # 1 + 4 + 4 + 4
             return (
-                bytes([1]) +                          # type = 1 for SINGLE
+                bytes([1 if self.type == BirdCommandType.SINGLE else 3]) +                          # type = 1 for SINGLE
                 total_len.to_bytes(4, 'little') +     # total length
                 self.dst_addr.to_bytes(4, 'little') + # destination address
                 self.data.to_bytes(4, 'little')       # data

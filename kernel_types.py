@@ -4,6 +4,20 @@ from dataclasses import dataclass
 from hw_resources import ResourceScope
 
 
+
+class KernelSize(Enum):
+    ONE_VCORE = "1Vcore"
+    SIZE_1X1 = "1x1"
+    SIZE_1X2 = "1x2"
+    SIZE_2X2 = "2x2"
+    SIZE_2X4 = "2x4"
+    SIZE_4X4 = "4x4"
+    SIZE_4X8 = "4x8"
+    SIZE_8X8 = "8x8"
+    SIZE_8X16 = "8x16"
+    SIZE_16X16 = "16x16"
+
+
 @dataclass
 class KernelLocation:
     """Represents a kernel location in the grid.
@@ -28,6 +42,69 @@ class KernelLocation:
         return f"({self.x}, {self.y})"
 
 
+@dataclass
+class KernelSuperGroup:
+    """Represents a contiguous area containing copies of the same kernel.
+    The area must be a power of 2 in both dimensions."""
+    x: int
+    y: int
+    size_x: int
+    size_y: int
+    kernel_size: KernelSize
+
+    def __post_init__(self):
+        # Check if sizes are powers of 2
+        if not (self.size_x > 0 and (self.size_x & (self.size_x - 1) == 0)):
+            raise ValueError(f"size_x must be a power of 2, got {self.size_x}")
+        if not (self.size_y > 0 and (self.size_y & (self.size_y - 1) == 0)):
+            raise ValueError(f"size_y must be a power of 2, got {self.size_y}")
+
+        # Get kernel dimensions
+        kernel_x, kernel_y = self._get_kernel_dimensions()
+        
+        # Check if supergroup size is compatible with kernel size
+        if self.size_x % kernel_x != 0 or self.size_y % kernel_y != 0:
+            raise ValueError(f"Supergroup size ({self.size_x}x{self.size_y}) must be multiple of kernel size ({kernel_x}x{kernel_y})")
+
+    def _get_kernel_dimensions(self) -> Tuple[int, int]:
+        """Get the x and y dimensions of the kernel based on its size"""
+        size_mapping = {
+            KernelSize.ONE_VCORE: (1, 1),
+            KernelSize.SIZE_1X1: (1, 1),
+            KernelSize.SIZE_1X2: (1, 2),
+            KernelSize.SIZE_2X2: (2, 2),
+            KernelSize.SIZE_2X4: (2, 4),
+            KernelSize.SIZE_4X4: (4, 4),
+            KernelSize.SIZE_4X8: (4, 8),
+            KernelSize.SIZE_8X8: (8, 8),
+            KernelSize.SIZE_8X16: (8, 16),
+            KernelSize.SIZE_16X16: (16, 16),
+        }
+        return size_mapping[self.kernel_size]
+
+    def get_kernel_locations(self) -> List[KernelLocation]:
+        """Get all kernel locations within this supergroup"""
+        kernel_x, kernel_y = self._get_kernel_dimensions()
+        locations = []
+
+        # For regular kernels
+        if self.kernel_size != KernelSize.ONE_VCORE:
+            for x in range(self.x, self.x + self.size_x, kernel_x):
+                for y in range(self.y, self.y + self.size_y, kernel_y):
+                    locations.append(KernelLocation(x, y))
+        # For vcore kernels
+        else:
+            for x in range(self.x, self.x + self.size_x):
+                for y in range(self.y, self.y + self.size_y):
+                    for vcore in range(4):  # All 4 vcores
+                        locations.append(KernelLocation(x, y, vcore))
+
+        return locations
+
+    def __str__(self) -> str:
+        return f"KernelSuperGroup at ({self.x}, {self.y}) size {self.size_x}x{self.size_y} for {self.kernel_size.value} kernel"
+
+
 class BufferLocationType(Enum):
     MSS000 = "MSS000"
     PE00 = "PE00"
@@ -41,19 +118,6 @@ class ChannelType(Enum):
     PACKED_BUFFER_QUEUE_OUTPUT = "PackedBufferQueueOutput"
     AUXILIARY_INPUT = "AuxiliaryInput"
     SINGLE_BUFFER_OUTPUT = "SingleBufferOutput"
-
-
-class KernelSize(Enum):
-    ONE_VCORE = "1Vcore"
-    SIZE_1X1 = "1x1"
-    SIZE_1X2 = "1x2"
-    SIZE_2X2 = "2x2"
-    SIZE_2X4 = "2x4"
-    SIZE_4X4 = "4x4"
-    SIZE_4X8 = "4x8"
-    SIZE_8X8 = "8x8"
-    SIZE_8X16 = "8x16"
-    SIZE_16X16 = "16x16"
 
 
 class AllocationType(Enum):
