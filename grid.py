@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Tuple, Union, Any, Set
 from hw_components import KernelSizeComponent, BroadCastNetwork, AXI2AHB
-from kernel_types import KernelSize, KernelLocation
-from bird import NetworkType, BirdCommandSequence
+from kernel_types import KernelSize, KernelLocation, KernelSuperGroup
+from bird import NetworkType, BirdCommandSequence, GridDestinationType
 
 class Grid:
     """Represents the hardware platform grid configuration"""
@@ -13,26 +13,33 @@ class Grid:
         # Dict mapping (x, y) to set of allocated vcores
         self.allocated_vcores: Dict[Tuple[int, int], Set[int]] = {}
         # Network components
-        self.axi2ahb_bridges: List[AXI2AHB] = []
+        self.axi2ahb = AXI2AHB()  # Get singleton instance
         self.brcst_networks: List[BroadCastNetwork] = []
         
-    def add_axi2ahb_bridge(self, mode: int, line_id: int):
-        """Add an AXI2AHB bridge configuration.
+    def add_axi2ahb_bridge(self, network: BroadCastNetwork, destination_type: GridDestinationType):
+        """Add a network configuration to the AXI2AHB bridge.
         
         Args:
-            mode: Operating mode of the bridge
-            line_id: Line ID for the bridge (0-15)
+            network: The broadcast network to configure
+            destination_type: The type of destination (VCORE, MSS, APB)
         """
-        bridge = AXI2AHB(f"axi2ahb_bridge_{line_id}", mode, line_id)
-        self.axi2ahb_bridges.append(bridge)
+        self.axi2ahb.add_network(network, destination_type)
         
-    def add_broadcast_network(self, network_id: int):
-        """Add a NOC broadcast network configuration.
+    def add_noc_brcst_setting(self, addr: int, data: int):
+        """Add a NOC broadcast network setting
         
         Args:
-            network_id: Network ID for the broadcast network (0-15)
+            addr: The address containing the network ID
+            data: The data containing network configuration
         """
-        network = BroadCastNetwork(f"brcst_network_{network_id}", network_id)
+        network_id = (addr >> 12) & 0xF
+        # Create a supergroup that covers the entire grid for broadcast
+        supergroup = KernelSuperGroup(
+            x=0, y=0,
+            size_x=self.size_x, size_y=self.size_y,
+            kernel_size=KernelSize.SIZE_1X1  # Use 1x1 as base size for broadcast
+        )
+        network = BroadCastNetwork(f"brcst_network_{network_id}", network_id, supergroup)
         self.brcst_networks.append(network)
         
     def get_apb_settings(self, network_type: NetworkType) -> BirdCommandSequence:
@@ -49,15 +56,7 @@ class Grid:
         """
         if network_type == NetworkType.DIRECT:
             # For direct access, we need AXI2AHB settings
-            sequence = BirdCommandSequence(
-                description="AXI2AHB Bridge Configuration",
-                network_type=NetworkType.DIRECT,
-                commands=[]
-            )
-            # Get settings from all bridges
-            for bridge in self.axi2ahb_bridges:
-                bridge_seq = bridge.get_apb_settings(KernelLocation(0, 0))  # Location doesn't matter for bridges
-                sequence.commands.extend(bridge_seq.commands)
+            return self.axi2ahb.get_apb_settings(KernelLocation(0, 0))
                 
         elif network_type in [NetworkType.MSS_BRCST, NetworkType.ALL_PE_BRCST, NetworkType.PE_ID_BRCST]:
             # For broadcast access, we need NOC broadcast settings

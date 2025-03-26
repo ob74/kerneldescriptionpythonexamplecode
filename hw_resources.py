@@ -6,6 +6,7 @@ class ResourceScope(Enum):
     ONE_MSS = "one-mss"
     ONE_PE = "one-pe"
     PE_GROUP = "pe-group"
+    FULL_GRID = "full-grid"
 
 
 # Base HW Resource class
@@ -75,12 +76,12 @@ class AXI2AHBResource(HWResource):
 
     def __repr__(self):
         base_repr = super().__repr__()
-        return f"AXI2AHBResource(mode={self.mode}, {reg_id=}, {base_repr[base_repr.index('(') + 1:]}" 
+        return f"AXI2AHBResource(mode={self.mode}, {self.reg_id=}, {base_repr[base_repr.index('(') + 1:]}" 
 
 class NOCBroadCastResource(HWResource):
     
-    def __init__(self, brcst_id: int, scope: ResourceScope):
-        super().__init__(scope)
+    def __init__(self, brcst_id: int):
+        super().__init__(ResourceScope.FULL_GRID)
         self.brcst_id = brcst_id
 
     def __repr__(self):

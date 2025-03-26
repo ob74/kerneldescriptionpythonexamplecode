@@ -4,7 +4,7 @@ from hw_resources import ResourceScope, NOCBroadCastResource, AXI2AHBResource
 from kernel_types import (
     BufferLocationType, ChannelType, KernelSize, AllocationType,
     ResourceRequirement, MemoryRequirement, DMARequirement, BarrierRequirement, ElementField,
-    KernelLocation
+    KernelLocation, KernelSuperGroup, GridDestinationType
 )
 from bird import BirdCommandSequence, NetworkType, BirdCommandType
 
@@ -353,15 +353,16 @@ class VariableResidentData(HWComponent):
 class BroadCastNetwork(HWComponent):
     """Represent the NOC configuration for a specific Broadcast Network"""
 
-    def __init__(self, name: str, noc_network_id: int):
+    def __init__(self, name: str, noc_network_id: int, supergroup: KernelSuperGroup):
         super().__init__(name)
         self.noc_network_id = noc_network_id
+        self.supergroup = supergroup
 
     def get_required_resources(self) -> List[ResourceRequirement]:
         """Returns a list of required resources"""
-        return [NOCBroadCastResource(brcst_id=self.noc_network_id, 
-                                   scope=ResourceScope.PE_GROUP, 
-                                   pe_x=0, pe_y=0)]
+        # Get the first location from the supergroup to determine PE coordinates
+        first_location = self.supergroup.get_kernel_locations()[0]
+        return [NOCBroadCastResource(brcst_id=self.noc_network_id)]
 
     def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
         """Returns APB settings as a BirdCommandSequence for a specific location"""
@@ -374,33 +375,97 @@ class BroadCastNetwork(HWComponent):
         seq.add_single_command(base_address + 0x00, self.noc_network_id)  # Network ID
         seq.add_single_command(base_address + 0x04, 1)  # Enable network
         
+        # Configure supergroup size and position
+        seq.add_single_command(base_address + 0x08, self.supergroup.size_x)  # Size X
+        seq.add_single_command(base_address + 0x0C, self.supergroup.size_y)  # Size Y
+        seq.add_single_command(base_address + 0x10, self.supergroup.x)  # Position X
+        seq.add_single_command(base_address + 0x14, self.supergroup.y)  # Position Y
+        
         return seq
 
 
 class AXI2AHB(HWComponent):
-    """Represent the NOC configuration for a specific AXI2AHB bridge"""
+    """Class representing the AXI2AHB bridge configuration for all networks"""
 
-    def __init__(self, name: str, mode: int, line_id: int):
+    def __init__(self, name: str = "AXI2AHB_Bridge"):
         super().__init__(name)
-        self.mode = mode
-        self.line_id = line_id
+        # Dictionary mapping (network_type, destination_type) to line_id
+        self.network_configs: Dict[Tuple[NetworkType, GridDestinationType], int] = {}
+        # Dictionary mapping line_id to (network_type, destination_type)
+        self.line_id_to_network: Dict[int, Tuple[NetworkType, GridDestinationType]] = {}
 
-    def get_required_resources(self) -> List[ResourceRequirement]:
-        """Returns a list of required resources"""
-        return [AXI2AHBResource(line_id=self.line_id, 
-                              scope=ResourceScope.PE_GROUP, 
-                              pe_x=0, pe_y=0)]
+    def add_network(self, network: BroadCastNetwork, destination_type: GridDestinationType):
+        """Add a network configuration to the bridge.
+        
+        Args:
+            network: The broadcast network to configure
+            destination_type: The type of destination (VCORE, MSS, APB)
+        """
+        # Get network type from the broadcast network
+        network_type = network.noc_network_id
+        
+        # Find next available line_id (0-15)
+        line_id = self._get_next_line_id()
+        
+        # Store configuration
+        self.network_configs[(network_type, destination_type)] = line_id
+        self.line_id_to_network[line_id] = (network_type, destination_type)
+
+    def _get_next_line_id(self) -> int:
+        """Find the next available line ID (0-15)"""
+        used_ids = set(self.line_id_to_network.keys())
+        for i in range(16):
+            if i not in used_ids:
+                return i
+        raise ValueError("No available line IDs (all 16 are in use)")
 
     def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
-        """Returns APB settings as a BirdCommandSequence for a specific location"""
-        # Calculate base address for AXI2AHB settings
-        base_address = 0x70000000 + (self.line_id * 0x1000)
+        """Get initial APB settings for all bridge configurations.
         
-        seq = BirdCommandSequence(f"AXI2AHB Bridge {self.name} APB settings", NetworkType.DIRECT, [])
+        Returns:
+            BirdCommandSequence containing all bridge configurations
+        """
+        seq = BirdCommandSequence(
+            description="AXI2AHB Bridge Initial Configuration",
+            network_type=NetworkType.DIRECT,
+            commands=[]
+        )
         
-        # Configure bridge mode and line ID
-        seq.add_single_command(base_address + 0x00, self.mode)  # Bridge mode
-        seq.add_single_command(base_address + 0x04, self.line_id)  # Line ID
-        seq.add_single_command(base_address + 0x08, 1)  # Enable bridge
+        # Configure all bridges
+        for (network_type, dest_type), line_id in self.network_configs.items():
+            base_address = 0x70000000 + (line_id * 0x1000)
+            seq.add_single_command(base_address + 0x04, line_id)  # Line ID
+            seq.add_single_command(base_address + 0x08, 1, safe = True)  # Enable bridge
+            
+        return seq
+
+    def get_apb_switch(self, network_type: NetworkType, destination_type: GridDestinationType) -> BirdCommandSequence:
+        """Get APB settings to switch to a specific network configuration.
+        
+        Args:
+            network_type: The type of network to switch to
+            destination_type: The type of destination
+            
+        Returns:
+            BirdCommandSequence containing the switch configuration
+            
+        Raises:
+            ValueError: If the network configuration doesn't exist
+        """
+        if (network_type, destination_type) not in self.network_configs:
+            raise ValueError(f"No bridge configuration for network type {network_type} and destination {destination_type}")
+            
+        line_id = self.network_configs[(network_type, destination_type)]
+        base_address = 0x70000000 + (line_id * 0x1000)
+        
+        seq = BirdCommandSequence(
+            description=f"AXI2AHB Bridge Switch to {network_type.value} ({destination_type.value})",
+            network_type=network_type,
+            commands=[]
+        )
+        
+        # Configure bridge for this network
+        seq.add_single_command(base_address + 0x04, line_id)  # Line ID
+        seq.add_single_command(base_address + 0x08, 1, safe = True)  # Enable bridge
         
         return seq

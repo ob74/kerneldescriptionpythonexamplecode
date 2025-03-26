@@ -10,6 +10,11 @@ class NetworkType(Enum):
     SUPER_PE_BRCST = "super_pe_broadcast"
     SUPER_MSS_BRCST = "super_mss_broadcast"
 
+class GridDestinationType(Enum):
+    VCORE = "vcore"
+    MSS = "mss"
+    APB = "apb"
+
 class BirdCommandType(Enum):
     SINGLE = "single"
     SAFE_SINGLE = "safe_single"
@@ -64,8 +69,8 @@ class BirdCommandSequence:
     def add_command(self, command: BirdCommand):
         self.commands.append(command)
 
-    def add_single_command(self, dst_addr: int, data: int):
-        self.commands.append(BirdCommand(BirdCommandType.SINGLE, dst_addr, data))
+    def add_single_command(self, dst_addr: int, data: int, safe: bool = False):
+        self.commands.append(BirdCommand(BirdCommandType.SINGLE if not safe else BirdCommandType.SAFE_SINGLE, dst_addr, data))
 
     def add_dma_command(self, dst_addr: int, data: List[int]):
         self.commands.append(BirdCommand(BirdCommandType.DMA, dst_addr, data))
