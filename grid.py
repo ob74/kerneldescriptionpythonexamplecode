@@ -46,7 +46,7 @@ class Grid:
         """Get APB settings for a specific network type.
         
         Args:
-            network_type: The type of network to get settings for
+            network_type: The NetworkType object specifying broadcast and destination types
             
         Returns:
             BirdCommandSequence containing the APB settings for the specified network
@@ -54,11 +54,15 @@ class Grid:
         Raises:
             ValueError: If network_type is not supported
         """
-        if network_type == NetworkType.DIRECT:
+        if network_type.broadcast_type == BroadcastType.DIRECT:
             # For direct access, we need AXI2AHB settings
             return self.axi2ahb.get_apb_settings(KernelLocation(0, 0))
                 
-        elif network_type in [NetworkType.MSS_BRCST, NetworkType.ALL_PE_BRCST, NetworkType.PE_ID_BRCST]:
+        elif network_type.broadcast_type in [
+            BroadcastType.PEG_MSS_BRCST,
+            BroadcastType.SUPER_PE_BRCST,
+            BroadcastType.SUPER_PE_ID_BRCST
+        ]:
             # For broadcast access, we need NOC broadcast settings
             sequence = BirdCommandSequence(
                 description="NOC Broadcast Network Configuration",
@@ -71,7 +75,7 @@ class Grid:
                 sequence.commands.extend(network_seq.commands)
                 
         else:
-            raise ValueError(f"Unsupported network type: {network_type}")
+            raise ValueError(f"Unsupported broadcast type: {network_type.broadcast_type}")
             
         return sequence
         

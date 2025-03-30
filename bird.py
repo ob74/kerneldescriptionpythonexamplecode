@@ -2,7 +2,7 @@ from enum import Enum
 from typing import List, Union
 from dataclasses import dataclass
 
-class NetworkType(Enum):
+class BroadcastType(Enum):
     DIRECT = "direct"
     PEG_MSS_BRCST = "peg_mss_broadcast"
     PEG_PE_BRCST = "peg_pe_broadcast"
@@ -19,6 +19,17 @@ class BirdCommandType(Enum):
     SINGLE = "single"
     SAFE_SINGLE = "safe_single"
     DMA = "dma"
+
+class NetworkType:
+    """Represents a network configuration with broadcast type and destination"""
+    def __init__(self, broadcast_type: BroadcastType, destination_type: GridDestinationType):
+        self.broadcast_type = broadcast_type
+        self.destination_type = destination_type
+
+    @property
+    def value(self) -> str:
+        """For backwards compatibility with string representations"""
+        return f"{self.broadcast_type.value}_{self.destination_type.value}"
 
 @dataclass
 class BirdCommand:

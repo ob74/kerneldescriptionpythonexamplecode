@@ -5,7 +5,7 @@ from kernel_types import KernelSize, KernelLocation
 from resource_allocators import MemoryAllocator
 from kernel_binary_parser import KernelBinary
 from hw_resources import MemoryResource
-from bird import BirdCommandSequence, NetworkType
+from bird import BirdCommandSequence, NetworkType, BroadcastType, GridDestinationType
 
 VCORE_PM = 0
 VCORE_PM_SIZE = 0x4000
@@ -202,7 +202,7 @@ class Kernel:
         for binary in self.binaries:
             binary_seq = BirdCommandSequence(
                 description=f"Binary {binary.name} for {self.name}",
-                network_type=NetworkType.DIRECT,
+                network_type=NetworkType(BroadcastType.DIRECT, GridDestinationType.VCORE),
                 commands=[]
             )
             # Add binary data as commands...
@@ -216,7 +216,7 @@ class Kernel:
                     if isinstance(resource, MemoryResource):
                         vrd_seq = BirdCommandSequence(
                             description=f"VRD {vrd.name}_{i} for {self.name}",
-                            network_type=NetworkType.MSS_BRCST,
+                            network_type=NetworkType(BroadcastType.PEG_MSS_BRCST, GridDestinationType.MSS),
                             commands=[]
                         )
                         # Add VRD data as commands...
