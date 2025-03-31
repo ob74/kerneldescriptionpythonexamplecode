@@ -152,15 +152,7 @@ class Kernel:
 
         # Add all binaries
         for binary in self.binaries:
-            binary_seq = BirdCommandSequence(
-                description=f"Binary {binary.name} for {self.name}",
-                network_type=NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.VCORE),
-                commands=[]
-            )
-            
-
-            
-            sequences.append(binary_seq)
+            sequences.append(binary.generate_bird_sequence())
 
         # Add VRD entries
         for vrd in self.vrd_components:

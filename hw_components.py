@@ -67,7 +67,6 @@ class KernelSizeComponent(HWComponent):
             NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.APB),
             []
         )
-
         # Apply settings for each location in the supergroup
         for location in supergroup.get_kernel_locations():
             base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)

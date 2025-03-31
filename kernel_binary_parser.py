@@ -1,6 +1,7 @@
 import re
 from typing import List, Tuple
 from enum import Enum, auto
+from bird import BirdCommandSequence, NetworkType, BroadcastType, GridDestinationType, BirdCommand, BirdCommandType
 
 class KernelBinary(Enum):
     VCORE_PM = ("ePM", 0x1000)
@@ -24,6 +25,17 @@ class KernelBinary(Enum):
                 instance._contents = MemoryDecoder(filename, instance.offset).get_memory_contents()
                 return instance
         raise ValueError(f"Unknown binary type for filename: {filename}")
+
+    def generate_bird_sequence(self) -> BirdCommandSequence:
+        """Returns APB settings for IO channel for a supergroup"""
+        seq = BirdCommandSequence(
+            f"Kernel Binary {self.filename}",
+            NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.VCORE),
+            []
+        )
+        for addr, data in self.contents:
+            seq.add_command(BirdCommand(BirdCommandType.DMA, addr, data))
+        return seq
 
     @property
     def contents(self) -> List[Tuple[int, bytes]]:

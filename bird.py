@@ -35,15 +35,15 @@ class NetworkType:
 class BirdCommand:
     type: BirdCommandType
     dst_addr: int
-    data: Union[int, List[int]]  # single 32-bit value for SINGLE, list of values for DMA
+    data: Union[int, bytes]  # single 32-bit value for SINGLE, list of values for DMA
 
     def __post_init__(self):
         if self.type == BirdCommandType.SINGLE and not isinstance(self.data, int):
             raise ValueError("SINGLE command must have int data")
         if self.type == BirdCommandType.SAFE_SINGLE and not isinstance(self.data, int):
             raise ValueError("SAFE_SINGLE command must have int data")
-        if self.type == BirdCommandType.DMA and not isinstance(self.data, list):
-            raise ValueError("DMA command must have list data")
+        if self.type == BirdCommandType.DMA and not isinstance(self.data, bytes):
+            raise ValueError("DMA command must have bytes data")
 
     def to_bytes(self) -> bytes:
         """Convert command to byte sequence.
