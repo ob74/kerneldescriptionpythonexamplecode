@@ -1,6 +1,6 @@
 import json
 from typing import Dict, List, Any, Tuple, Optional
-from hw_components import HWComponent, KernelSizeComponent, IOChannel, VariableResidentData
+from hw_components import HWComponent, KernelSizeComponent, IOChannel, VariableResidentData, KernelSuperGroup
 from kernel_types import KernelSize, KernelLocation
 from resource_allocators import MemoryAllocator
 from kernel_binary_parser import KernelBinary
@@ -23,7 +23,7 @@ class Kernel:
         self.size_component = KernelSizeComponent(size)
         self.allocated = False
         self.is_built = False
-        self.binaries: List[KernelBinaryType] = []
+        self.binaries: List[KernelBinary] = []
         self.io_channels: List[IOChannel] = []
         self.vrd_components: List[VariableResidentData] = []
         self.other_components: List[HWComponent] = []
@@ -123,50 +123,13 @@ class Kernel:
         # Join all lines with newlines
         return "\n".join(lines)
 
-    def generate_apb_settings(self, location: KernelLocation) -> List[BirdCommandSequence]:
-        """Generate all APB settings for the kernel at a specific location.
+  
+
+    def generate_bird_sequence(self, supergroup: KernelSuperGroup) -> List[BirdCommandSequence]:
+        """Generate BIRD sequence for kernel initialization for a supergroup.
         
         Args:
-            location: KernelLocation specifying where the kernel is placed
-            
-        Returns:
-            List of BirdCommandSequence objects containing APB settings
-        """
-        # Get all components
-        all_components = [self.size_component] + self.io_channels + self.vrd_components + self.other_components
-
-        # Generate APB settings for each component
-        sequences = []
-        for component in all_components:
-            sequences.append(component.get_apb_settings(location))
-
-        return sequences
-
-    @classmethod
-    def vcore_addr(cls, x: int, y: int, vcore_num: int) -> int:
-        """Calculate the vcore address for a given PE location and vcore number.
-        
-        Args:
-            x: X coordinate of the PE (0-15)
-            y: Y coordinate of the PE (0-15)
-            vcore_num: Vcore number (0-3)
-            
-        Returns:
-            int: The calculated vcore address
-            
-        Raises:
-            AssertionError: If coordinates or vcore number are out of range
-        """
-        assert 0 <= x < 16
-        assert 0 <= y < 16
-        assert 0 <= vcore_num < 4
-        return (x << 24) | (y << 20) | (vcore_num << 18)
-
-    def generate_bird_sequence(self, location: KernelLocation) -> List[BirdCommandSequence]:
-        """Generate BIRD sequence for kernel initialization at a specific location.
-        
-        Args:
-            location: KernelLocation specifying where the kernel is placed
+            supergroup: KernelSuperGroup specifying where the kernel is placed
             
         Returns:
             List of BirdCommandSequence objects containing all initialization commands
@@ -180,32 +143,23 @@ class Kernel:
         # Allocate resources first
         self.allocate_resources()
 
-        # Calculate destination addresses for all PEs and vcores
-        dst_addrs = []
-        if self.size_component.size == KernelSize.ONE_VCORE:
-            # For vcore kernels, just use the specific vcore
-            dst_addrs.append(Kernel.vcore_addr(location.x, location.y, location.vcore) + VCORE_PM)
-        else:
-            # For regular kernels, include all PEs in the kernel area
-            kernel_x, kernel_y = self.size_component.get_dimensions()
-            dst_addrs.extend([Kernel.vcore_addr(x, y, vcore) + VCORE_PM 
-                            for x in range(location.x, location.x + kernel_x)
-                            for y in range(location.y, location.y + kernel_y)
-                            for vcore in range(0,4)])
-
         sequences = []
 
-        # Add APB settings
-        sequences.extend(self.generate_apb_settings(location))
+        # Add APB settings for all components
+        all_components = [self.size_component] + self.io_channels + self.vrd_components + self.other_components
+        for component in all_components:
+            sequences.append(component.get_apb_settings(supergroup))
 
         # Add all binaries
         for binary in self.binaries:
             binary_seq = BirdCommandSequence(
                 description=f"Binary {binary.name} for {self.name}",
-                network_type=NetworkType(BroadcastType.DIRECT, GridDestinationType.VCORE),
+                network_type=NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.VCORE),
                 commands=[]
             )
-            # Add binary data as commands...
+            
+
+            
             sequences.append(binary_seq)
 
         # Add VRD entries
@@ -216,10 +170,10 @@ class Kernel:
                     if isinstance(resource, MemoryResource):
                         vrd_seq = BirdCommandSequence(
                             description=f"VRD {vrd.name}_{i} for {self.name}",
-                            network_type=NetworkType(BroadcastType.PEG_MSS_BRCST, GridDestinationType.MSS),
+                            network_type=NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.MSS),
                             commands=[]
                         )
-                        # Add VRD data as commands...
+                        # Add VRD data commands...
                         sequences.append(vrd_seq)
 
         return sequences

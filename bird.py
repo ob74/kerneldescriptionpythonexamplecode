@@ -6,9 +6,9 @@ class BroadcastType(Enum):
     DIRECT = "direct"
     PEG_MSS_BRCST = "peg_mss_broadcast"
     PEG_PE_BRCST = "peg_pe_broadcast"
-    SUPER_PE_ID_BRCST = "super_pe_id_broadcast"
-    SUPER_PE_BRCST = "super_pe_broadcast"
-    SUPER_MSS_BRCST = "super_mss_broadcast"
+    SUPER_PE_ID_BRCST = "supergroup_pe_id_broadcast"
+    SUPER_PE_BRCST = "supergroup_pe_broadcast"
+    SUPER_MSS_BRCST = "supergroup_mss_broadcast"
 
 class GridDestinationType(Enum):
     VCORE = "vcore"
@@ -29,7 +29,7 @@ class NetworkType:
     @property
     def value(self) -> str:
         """For backwards compatibility with string representations"""
-        return f"{self.broadcast_type.value}_{self.destination_type.value}"
+        return f"{self.broadcast_type.value} to {self.destination_type.value}"
 
 @dataclass
 class BirdCommand:

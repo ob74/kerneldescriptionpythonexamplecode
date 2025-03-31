@@ -37,8 +37,12 @@ def test_haps_g_single():
     # Create a 2x2 supergroup for the 2x2 kernel at (0,0)
     g_supergroup = KernelSuperGroup(x=0, y=0, size_x=2, size_y=2, kernel_size=KernelSize.SIZE_2X2)
     app.add_kernel(kernel_g, g_supergroup)
-        
-    print(app.generate_bird_sequence())
+    
+    sequences = app.generate_bird_sequence()
+    for sequence in sequences:
+        print(sequence)
+        print()  # Add extra newline between sequences
+       
     assert True
 
 def test_full_chip_g_single():
@@ -80,7 +84,7 @@ def example_application():
     # Create a 8x8 supergroup for the 4x4 kernel at (0,0)
     supergroup1 = KernelSuperGroup(x=0, y=0, size_x=8, size_y=8, kernel_size=KernelSize.SIZE_4X4)
     
-    print(kernel1.generate_bird_sequence(location=supergroup1.get_kernel_locations()[0]))
+    print(kernel1.generate_bird_sequence(supergroup1))
     
     app.add_kernel(kernel1, supergroup1)
         
@@ -112,7 +116,7 @@ def example_application():
 
 
 if __name__ == "__main__":
-    result = example_application()
+    # result = example_application()
 
-    test_haps_gs()
+    test_haps_g_single()
            

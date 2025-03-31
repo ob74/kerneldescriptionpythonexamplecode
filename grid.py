@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Tuple, Union, Any, Set
 from hw_components import KernelSizeComponent, BroadCastNetwork, AXI2AHB
 from kernel_types import KernelSize, KernelLocation, KernelSuperGroup
-from bird import NetworkType, BirdCommandSequence, GridDestinationType
+from bird import NetworkType, BirdCommandSequence, GridDestinationType, BroadcastType
 
 class Grid:
     """Represents the hardware platform grid configuration"""
@@ -43,37 +43,31 @@ class Grid:
         self.brcst_networks.append(network)
         
     def get_apb_settings(self, network_type: NetworkType) -> BirdCommandSequence:
-        """Get APB settings for a specific network type.
-        
-        Args:
-            network_type: The NetworkType object specifying broadcast and destination types
-            
-        Returns:
-            BirdCommandSequence containing the APB settings for the specified network
-            
-        Raises:
-            ValueError: If network_type is not supported
-        """
+        """Get APB settings for a specific network type."""
         if network_type.broadcast_type == BroadcastType.DIRECT:
-            # For direct access, we need AXI2AHB settings
-            return self.axi2ahb.get_apb_settings(KernelLocation(0, 0))
-                
+            # For direct access, create a dummy supergroup for the AXI2AHB settings
+            supergroup = KernelSuperGroup(0, 0, 1, 1, KernelSize.SIZE_1X1)
+            return self.axi2ahb.get_apb_settings(supergroup)
+            
         elif network_type.broadcast_type in [
             BroadcastType.PEG_MSS_BRCST,
             BroadcastType.SUPER_PE_BRCST,
             BroadcastType.SUPER_PE_ID_BRCST
         ]:
-            # For broadcast access, we need NOC broadcast settings
             sequence = BirdCommandSequence(
                 description="NOC Broadcast Network Configuration",
                 network_type=network_type,
                 commands=[]
             )
+            
+            # Create a supergroup that covers the entire grid
+            supergroup = KernelSuperGroup(0, 0, self.size_x, self.size_y, KernelSize.SIZE_1X1)
+            
             # Get settings from all broadcast networks
             for network in self.brcst_networks:
-                network_seq = network.get_apb_settings(KernelLocation(0, 0))  # Location doesn't matter for networks
+                network_seq = network.get_apb_settings(supergroup)
                 sequence.commands.extend(network_seq.commands)
-                
+            
         else:
             raise ValueError(f"Unsupported broadcast type: {network_type.broadcast_type}")
             

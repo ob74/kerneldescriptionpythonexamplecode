@@ -55,18 +55,16 @@ class Application:
         
         # Collect all command sequences from kernels
         for kernel, supergroup in self.kernels:
-            # Get kernel's BIRD sequence for each location in the supergroup
-            for location in supergroup.get_kernel_locations():
-                kernel_sequences = kernel.generate_bird_sequence(location)
-                
-                # Add all sequences from the kernel
-                for sequence in kernel_sequences:
-                    # Switch network if needed
-                    if sequence.network_type != current_network:
-                        network_config = self.grid.get_apb_settings(sequence.network_type)
-                        all_sequences.append(network_config)
-                        current_network = sequence.network_type
-                    all_sequences.append(sequence)
+            kernel_sequences = kernel.generate_bird_sequence(supergroup)
+            
+            # Add all sequences from the kernel
+            for sequence in kernel_sequences:
+                # Switch network if needed
+                if sequence.network_type != current_network:
+                    network_config = self.grid.get_apb_settings(sequence.network_type)
+                    all_sequences.append(network_config)
+                    current_network = sequence.network_type
+                all_sequences.append(sequence)
         
         return all_sequences
 

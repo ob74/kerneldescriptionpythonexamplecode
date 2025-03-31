@@ -23,8 +23,8 @@ class HWComponent:
         """Returns definitions for .h files"""
         return {}
 
-    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
-        """Returns APB settings as a BirdCommandSequence for a specific location"""
+    def get_apb_settings(self, supergroup: KernelSuperGroup) -> BirdCommandSequence:
+        """Returns APB settings as a BirdCommandSequence for a specific supergroup"""
         return BirdCommandSequence(
             f"{self.name} APB settings",
             NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
@@ -58,22 +58,25 @@ class KernelSizeComponent(HWComponent):
             "PEG_Y_SIZE": y_size
         }
 
-    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
-        """Returns APB settings for kernel size at a specific location"""
+    def get_apb_settings(self, supergroup: KernelSuperGroup) -> BirdCommandSequence:
+        """Returns APB settings for kernel size for a supergroup"""
         x_size, y_size = self.size_mapping[self.size]
-        
-        # Calculate base address for this component at this location
-        base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
-        if location.is_vcore:
-            base_address += location.vcore * 0x100
         
         seq = BirdCommandSequence(
             f"Kernel Size APB settings for {self.name}",
-            NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
+            NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.APB),
             []
         )
-        seq.add_single_command(base_address + 0x00, x_size)
-        seq.add_single_command(base_address + 0x04, y_size)
+
+        # Apply settings for each location in the supergroup
+        for location in supergroup.get_kernel_locations():
+            base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
+            if location.is_vcore:
+                base_address += location.vcore * 0x100
+            
+            seq.add_single_command(base_address + 0x00, x_size)
+            seq.add_single_command(base_address + 0x04, y_size)
+        
         return seq
 
     def get_dimensions(self) -> Tuple[int, int]:
@@ -195,34 +198,35 @@ class IOChannel(HWComponent):
 
         return defs
 
-    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
-        """Returns APB settings for IO channel at a specific location"""
-        # Calculate base address for this component at this location
-        base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
-        if location.is_vcore:
-            base_address += location.vcore * 0x100
-        
+    def get_apb_settings(self, supergroup: KernelSuperGroup) -> BirdCommandSequence:
+        """Returns APB settings for IO channel for a supergroup"""
         seq = BirdCommandSequence(
             f"IO Channel APB settings for {self.name}",
-            NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
+            NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.APB),
             []
         )
 
-        # Channel type configuration
-        channel_type_val = self.channel_type.value
-        seq.add_single_command(base_address + 0x100, channel_type_val.__hash__() & 0xFFFFFFFF)
+        # Apply settings for each location in the supergroup
+        for location in supergroup.get_kernel_locations():
+            base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
+            if location.is_vcore:
+                base_address += location.vcore * 0x100
 
-        # Buffer location configuration
-        if self.buffer_location == BufferLocationType.MSS000:
-            seq.add_single_command(base_address + 0x104, 0x1)
-        elif self.buffer_location == BufferLocationType.PE00:
-            seq.add_single_command(base_address + 0x104, 0x2)
-        elif self.buffer_location == BufferLocationType.SPREAD:
-            seq.add_single_command(base_address + 0x104, 0x3)
+            # Channel type configuration
+            channel_type_val = self.channel_type.value
+            seq.add_single_command(base_address + 0x100, channel_type_val.__hash__() & 0xFFFFFFFF)
 
-        # Buffer size and count
-        seq.add_single_command(base_address + 0x108, self.buffer_size)
-        seq.add_single_command(base_address + 0x10C, self.num_buffers)
+            # Buffer location configuration
+            if self.buffer_location == BufferLocationType.MSS000:
+                seq.add_single_command(base_address + 0x104, 0x1)
+            elif self.buffer_location == BufferLocationType.PE00:
+                seq.add_single_command(base_address + 0x104, 0x2)
+            elif self.buffer_location == BufferLocationType.SPREAD:
+                seq.add_single_command(base_address + 0x104, 0x3)
+
+            # Buffer size and count
+            seq.add_single_command(base_address + 0x108, self.buffer_size)
+            seq.add_single_command(base_address + 0x10C, self.num_buffers)
 
         return seq
 
@@ -331,37 +335,38 @@ class VariableResidentData(HWComponent):
 
         return defs
 
-    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
-        """Returns APB settings for VRD at a specific location"""
-        # Calculate base address for this component at this location
-        base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
-        if location.is_vcore:
-            base_address += location.vcore * 0x100
-            
+    def get_apb_settings(self, supergroup: KernelSuperGroup) -> BirdCommandSequence:
+        """Returns APB settings for VRD for a supergroup"""
         seq = BirdCommandSequence(
             f"VRD APB settings for {self.name}",
-            NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
+            NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.APB),
             []
         )
 
-        # Element size and count
-        seq.add_single_command(base_address + 0x200, self.element_size)
-        seq.add_single_command(base_address + 0x204, self.num_elements)
+        # Apply settings for each location in the supergroup
+        for location in supergroup.get_kernel_locations():
+            base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
+            if location.is_vcore:
+                base_address += location.vcore * 0x100
 
-        # Allocation type
-        alloc_type_val = 0
-        if self.allocation_type == AllocationType.MSS_DUPLICATED:
-            alloc_type_val = 1
-        elif self.allocation_type == AllocationType.PE_DUPLICATED:
-            alloc_type_val = 2
-        elif self.allocation_type == AllocationType.MSS_DISTRIBUTED:
-            alloc_type_val = 3
-        elif self.allocation_type == AllocationType.PE_DISTRIBUTED:
-            alloc_type_val = 4
-        seq.add_single_command(base_address + 0x208, alloc_type_val)
+            # Element size and count
+            seq.add_single_command(base_address + 0x200, self.element_size)
+            seq.add_single_command(base_address + 0x204, self.num_elements)
 
-        # DMA channel required
-        seq.add_single_command(base_address + 0x20C, 1 if self.dma_channel_required else 0)
+            # Allocation type
+            alloc_type_val = 0
+            if self.allocation_type == AllocationType.MSS_DUPLICATED:
+                alloc_type_val = 1
+            elif self.allocation_type == AllocationType.PE_DUPLICATED:
+                alloc_type_val = 2
+            elif self.allocation_type == AllocationType.MSS_DISTRIBUTED:
+                alloc_type_val = 3
+            elif self.allocation_type == AllocationType.PE_DISTRIBUTED:
+                alloc_type_val = 4
+            seq.add_single_command(base_address + 0x208, alloc_type_val)
+
+            # DMA channel required
+            seq.add_single_command(base_address + 0x20C, 1 if self.dma_channel_required else 0)
 
         return seq
 
@@ -380,9 +385,10 @@ class BroadCastNetwork(HWComponent):
         first_location = self.supergroup.get_kernel_locations()[0]
         return [NOCBroadCastResource(brcst_id=self.noc_network_id)]
 
-    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
-        """Returns APB settings as a BirdCommandSequence for a specific location"""
-        # Calculate base address for NOC broadcast settings
+    def get_apb_settings(self, supergroup: KernelSuperGroup) -> BirdCommandSequence:
+        """Returns APB settings for the broadcast network"""
+        # For broadcast networks, we don't need to iterate through locations
+        # as the settings apply to the entire network
         base_address = 0x60000000 + (self.noc_network_id * 0x1000)
         
         seq = BirdCommandSequence(
@@ -391,15 +397,12 @@ class BroadCastNetwork(HWComponent):
             []
         )
         
-        # Configure network ID and enable
-        seq.add_single_command(base_address + 0x00, self.noc_network_id)  # Network ID
-        seq.add_single_command(base_address + 0x04, 1)  # Enable network
-        
-        # Configure supergroup size and position
-        seq.add_single_command(base_address + 0x08, self.supergroup.size_x)  # Size X
-        seq.add_single_command(base_address + 0x0C, self.supergroup.size_y)  # Size Y
-        seq.add_single_command(base_address + 0x10, self.supergroup.x)  # Position X
-        seq.add_single_command(base_address + 0x14, self.supergroup.y)  # Position Y
+        seq.add_single_command(base_address + 0x00, self.noc_network_id)
+        seq.add_single_command(base_address + 0x04, 1)
+        seq.add_single_command(base_address + 0x08, self.supergroup.size_x)
+        seq.add_single_command(base_address + 0x0C, self.supergroup.size_y)
+        seq.add_single_command(base_address + 0x10, self.supergroup.x)
+        seq.add_single_command(base_address + 0x14, self.supergroup.y)
         
         return seq
 
@@ -439,18 +442,19 @@ class AXI2AHB(HWComponent):
                 return i
         raise ValueError("No available line IDs (all 16 are in use)")
 
-    def get_apb_settings(self, location: KernelLocation) -> BirdCommandSequence:
+    def get_apb_settings(self, supergroup: KernelSuperGroup) -> BirdCommandSequence:
+        """Returns APB settings for the AXI2AHB bridge"""
+        # Bridge settings are global, so we don't need to iterate through locations
         seq = BirdCommandSequence(
             "AXI2AHB Bridge Initial Configuration",
             NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
             []
         )
         
-        # Configure all bridges
         for (network_type, dest_type), line_id in self.network_configs.items():
             base_address = 0x70000000 + (line_id * 0x1000)
-            seq.add_single_command(base_address + 0x04, line_id)  # Line ID
-            seq.add_single_command(base_address + 0x08, 1, safe = True)  # Enable bridge
+            seq.add_single_command(base_address + 0x04, line_id)
+            seq.add_single_command(base_address + 0x08, 1, safe=True)
             
         return seq
 
