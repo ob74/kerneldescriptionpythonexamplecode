@@ -5,6 +5,7 @@ from kernel import Kernel
 from hw_components import KernelSizeComponent
 from kernel_types import KernelSize, KernelLocation, KernelSuperGroup
 from bird import BirdCommandSequence
+from network import BroadCastNetwork, GridDestinationType
 
 # Application class (Stage 2 - Application Definition)
 class Application:
@@ -27,6 +28,18 @@ class Application:
         # Allocate all locations in the supergroup
         for location in supergroup.get_kernel_locations():
             assert self.grid.allocate_kernel(kernel.size_component, location)
+            
+        # Add networks to the grid based on kernel type and supergroup
+        # we need broadcast networks for both PE and MSS access
+        # PE broadcast network
+        pe_network = BroadCastNetwork(f"pe_network_{kernel.name}", 1, supergroup)
+        self.grid.add_noc_brcst_setting(0x60001000, 1)  # Network ID 1
+        self.grid.add_axi2ahb_bridge(pe_network, GridDestinationType.VCORE)
+        
+        # MSS broadcast network
+        mss_network = BroadCastNetwork(f"mss_network_{kernel.name}", 2, supergroup)
+        self.grid.add_noc_brcst_setting(0x60002000, 2)  # Network ID 2
+        self.grid.add_axi2ahb_bridge(mss_network, GridDestinationType.MSS)
             
         self.kernels.append((kernel, supergroup))
 
