@@ -36,7 +36,12 @@ class Application:
         # MSS broadcast network for MSS access
         mss_network = self.grid.add_broadcast_network(supergroup, 
                                                       NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.MSS))
-            
+
+        # APB broadcast network for APB access
+        apb_network = self.grid.add_broadcast_network(supergroup, 
+                                                      NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.APB))
+        
+        # Add broadcast networks for the supergroup
         self.kernels.append((kernel, supergroup))
 
     def generate_basic_sequence(self) -> bytes:
