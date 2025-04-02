@@ -1,7 +1,8 @@
 from typing import Dict, List, Optional, Tuple, Union, Any, Set
-from hw_components import KernelSizeComponent, BroadCastNetwork, AXI2AHB
+from hw_components import KernelSizeComponent, BroadCastNetwork
 from kernel_types import KernelSize, KernelLocation, KernelSuperGroup
-from bird import NetworkType, BirdCommandSequence, GridDestinationType, BroadcastType
+from grid_noc import GridNOC
+from bird import NetworkType, BirdCommandSequence
 
 class Grid:
     """Represents the hardware platform grid configuration"""
@@ -13,65 +14,34 @@ class Grid:
         # Dict mapping (x, y) to set of allocated vcores
         self.allocated_vcores: Dict[Tuple[int, int], Set[int]] = {}
         # Network components
-        self.axi2ahb = AXI2AHB()  # Get singleton instance
-        self.brcst_networks: List[BroadCastNetwork] = []
+        self.noc = GridNOC()
         
-    def add_axi2ahb_bridge(self, network: BroadCastNetwork, destination_type: GridDestinationType):
-        """Add a network configuration to the AXI2AHB bridge.
-        
-        Args:
-            network: The broadcast network to configure
-            destination_type: The type of destination (VCORE, MSS, APB)
-        """
-        self.axi2ahb.add_network(network, destination_type)
-        
-    def add_noc_brcst_setting(self, addr: int, data: int):
-        """Add a NOC broadcast network setting
+    def add_broadcast_network(self, supergroup: KernelSuperGroup, network_type: NetworkType) -> BroadCastNetwork:
+        """Add a broadcast network for a specific supergroup and network type.
         
         Args:
-            addr: The address containing the network ID
-            data: The data containing network configuration
+            supergroup: The supergroup this network will serve
+            network_type: The type of network to create
+            
+        Returns:
+            BroadCastNetwork: The created network
         """
-        network_id = (addr >> 12) & 0xF
-        # Create a supergroup that covers the entire grid for broadcast
-        supergroup = KernelSuperGroup(
-            x=0, y=0,
-            size_x=self.size_x, size_y=self.size_y,
-            kernel_size=KernelSize.SIZE_1X1  # Use 1x1 as base size for broadcast
-        )
-        network = BroadCastNetwork(f"brcst_network_{network_id}", network_id, supergroup)
-        self.brcst_networks.append(network)
+        return self.noc.add_broadcast_network(supergroup, network_type)
         
     def get_apb_settings(self, network_type: NetworkType) -> BirdCommandSequence:
         """Get APB settings for a specific network type."""
-        if network_type.broadcast_type == BroadcastType.DIRECT:
-            # For direct access, create a dummy supergroup for the AXI2AHB settings
-            supergroup = KernelSuperGroup(0, 0, 1, 1, KernelSize.SIZE_1X1)
-            return self.axi2ahb.get_apb_settings(supergroup)
+        return self.noc.get_apb_settings(network_type)
             
-        elif network_type.broadcast_type in [
-            BroadcastType.PEG_MSS_BRCST,
-            BroadcastType.SUPER_PE_BRCST,
-            BroadcastType.SUPER_PE_ID_BRCST
-        ]:
-            sequence = BirdCommandSequence(
-                description="NOC Broadcast Network Configuration",
-                network_type=network_type,
-                commands=[]
-            )
+    def get_network_switch(self, network_type: NetworkType) -> BirdCommandSequence:
+        """Get APB settings to switch to a specific network type.
+        
+        Args:
+            network_type: The network type to switch to
             
-            # Create a supergroup that covers the entire grid
-            supergroup = KernelSuperGroup(0, 0, self.size_x, self.size_y, KernelSize.SIZE_1X1)
-            
-            # Get settings from all broadcast networks
-            for network in self.brcst_networks:
-                network_seq = network.get_apb_settings(supergroup)
-                sequence.commands.extend(network_seq.commands)
-            
-        else:
-            raise ValueError(f"Unsupported broadcast type: {network_type.broadcast_type}")
-            
-        return sequence
+        Returns:
+            BirdCommandSequence: The switch configuration
+        """
+        return self.noc.get_network_switch(network_type)
         
     def _is_within_bounds(self, x: int, y: int) -> bool:
         """Check if a location is within platform dimensions"""

@@ -31,6 +31,14 @@ class NetworkType:
         """For backwards compatibility with string representations"""
         return f"{self.broadcast_type.value} to {self.destination_type.value}"
 
+    def __str__(self) -> str:
+        """String representation of the network type"""
+        return f"NetworkType({self.broadcast_type.name}, {self.destination_type.name})"
+
+    def __repr__(self) -> str:
+        """Detailed string representation for debugging"""
+        return self.__str__()
+
 @dataclass
 class BirdCommand:
     type: BirdCommandType

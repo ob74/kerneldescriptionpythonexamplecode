@@ -411,27 +411,23 @@ class AXI2AHB(HWComponent):
 
     def __init__(self, name: str = "AXI2AHB_Bridge"):
         super().__init__(name)
-        # Dictionary mapping (network_type, destination_type) to line_id
-        self.network_configs: Dict[Tuple[NetworkType, GridDestinationType], int] = {}
-        # Dictionary mapping line_id to (network_type, destination_type)
-        self.line_id_to_network: Dict[int, Tuple[NetworkType, GridDestinationType]] = {}
+        # Dictionary mapping network_type to line_id
+        self.network_configs: Dict[NetworkType, int] = {}
+        # Dictionary mapping line_id to network_type
+        self.line_id_to_network: Dict[int, NetworkType] = {}
 
-    def add_network(self, network: BroadCastNetwork, destination_type: GridDestinationType):
+    def add_network(self, network_type: NetworkType):
         """Add a network configuration to the bridge.
         
         Args:
-            network: The broadcast network to configure
-            destination_type: The type of destination (VCORE, MSS, APB)
+            network_type: The type of network to configure
         """
-        # Get network type from the broadcast network
-        network_type = network.noc_network_id
-        
         # Find next available line_id (0-15)
         line_id = self._get_next_line_id()
         
         # Store configuration
-        self.network_configs[(network_type, destination_type)] = line_id
-        self.line_id_to_network[line_id] = (network_type, destination_type)
+        self.network_configs[network_type] = line_id
+        self.line_id_to_network[line_id] = network_type
 
     def _get_next_line_id(self) -> int:
         """Find the next available line ID (0-15)"""
@@ -441,32 +437,43 @@ class AXI2AHB(HWComponent):
                 return i
         raise ValueError("No available line IDs (all 16 are in use)")
 
-    def get_apb_settings(self, supergroup: KernelSuperGroup) -> BirdCommandSequence:
-        """Returns APB settings for the AXI2AHB bridge"""
-        # Bridge settings are global, so we don't need to iterate through locations
+    def get_apb_settings(self) -> BirdCommandSequence:
+        """Returns APB settings for all configured networks in the AXI2AHB bridge.
+        
+        Returns:
+            BirdCommandSequence: The configuration sequence for all networks
+        """
         seq = BirdCommandSequence(
             "AXI2AHB Bridge Initial Configuration",
             NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
             []
         )
         
-        for (network_type, dest_type), line_id in self.network_configs.items():
+        for network_type, line_id in self.network_configs.items():
             base_address = 0x70000000 + (line_id * 0x1000)
             seq.add_single_command(base_address + 0x04, line_id)
             seq.add_single_command(base_address + 0x08, 1, safe=True)
             
         return seq
 
-    def get_apb_switch(self, broadcast_type: BroadcastType, destination_type: GridDestinationType) -> BirdCommandSequence:
-        if (broadcast_type, destination_type) not in self.network_configs:
-            raise ValueError(f"No bridge configuration for broadcast type {broadcast_type} and destination {destination_type}")
+    def get_apb_switch(self, network_type: NetworkType) -> BirdCommandSequence:
+        """Get APB settings to switch to a specific network type.
+        
+        Args:
+            network_type: The network type to switch to
             
-        line_id = self.network_configs[(broadcast_type, destination_type)]
+        Returns:
+            BirdCommandSequence: The switch configuration
+        """
+        if network_type not in self.network_configs:
+            raise ValueError(f"No bridge configuration for network type {network_type}")
+            
+        line_id = self.network_configs[network_type]
         base_address = 0x70000000 + (line_id * 0x1000)
         
         seq = BirdCommandSequence(
-            description=f"AXI2AHB Bridge Switch to {broadcast_type.value} ({destination_type.value})",
-            network_type=NetworkType(broadcast_type, destination_type),
+            description=f"AXI2AHB Bridge Switch to {network_type.value}",
+            network_type=network_type,
             commands=[]
         )
         
