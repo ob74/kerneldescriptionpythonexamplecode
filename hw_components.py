@@ -426,6 +426,7 @@ class AXI2AHB(HWComponent):
         line_id = self._get_next_line_id()
         
         # Store configuration
+        print(f"Adding network {network_type} to AXI2AHB bridge at line_id {line_id}")
         self.network_configs[network_type] = line_id
         self.line_id_to_network[line_id] = network_type
 
@@ -465,6 +466,7 @@ class AXI2AHB(HWComponent):
         Returns:
             BirdCommandSequence: The switch configuration
         """
+        
         if network_type not in self.network_configs:
             raise ValueError(f"No bridge configuration for network type {network_type}")
             

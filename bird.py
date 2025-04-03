@@ -26,14 +26,23 @@ class NetworkType:
         self.broadcast_type = broadcast_type
         self.destination_type = destination_type
 
+    def __eq__(self, other: 'NetworkType') -> bool:
+        if not isinstance(other, NetworkType):
+            return False
+        return (self.broadcast_type == other.broadcast_type and 
+                self.destination_type == other.destination_type)
+
+    def __hash__(self) -> int:
+        return hash((self.broadcast_type, self.destination_type))
+
     @property
     def value(self) -> str:
         """For backwards compatibility with string representations"""
-        return f"{self.broadcast_type.value} to {self.destination_type.value}"
+        return f"{self.broadcast_type.value}_{self.destination_type.value}"
 
     def __str__(self) -> str:
         """String representation of the network type"""
-        return f"NetworkType({self.broadcast_type.name}, {self.destination_type.name})"
+        return f"NetworkType({self.broadcast_type}, {self.destination_type})"
 
     def __repr__(self) -> str:
         """Detailed string representation for debugging"""

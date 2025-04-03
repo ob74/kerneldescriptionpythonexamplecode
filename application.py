@@ -28,20 +28,18 @@ class Application:
         for location in supergroup.get_kernel_locations():
             assert self.grid.allocate_kernel(kernel.size_component, location)
             
-        # Add broadcast networks for the supergroup
-        # PE broadcast network for vcore access
-        vcore_pm_network = self.grid.add_broadcast_network(supergroup, 
-                                                     NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.VCORE))
+        # Create broadcast networks for the supergroup
+        network_types = [
+            NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.VCORE),
+            NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.MSS),
+            NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.APB)
+        ]
         
-        # MSS broadcast network for MSS access
-        mss_network = self.grid.add_broadcast_network(supergroup, 
-                                                      NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.MSS))
-
-        # APB broadcast network for APB access
-        apb_network = self.grid.add_broadcast_network(supergroup, 
-                                                      NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.APB))
+        # Add broadcast networks and register with AXI2AHB
+        for network_type in network_types:
+            self.grid.add_broadcast_network(supergroup, network_type)
         
-        # Add broadcast networks for the supergroup
+        # Add kernel to list
         self.kernels.append((kernel, supergroup))
 
     def generate_basic_sequence(self) -> bytes:
