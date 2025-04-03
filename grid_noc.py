@@ -44,24 +44,9 @@ class GridNOC:
         network_seq = network.get_apb_settings(supergroup)
         self.broadcast_sequence.commands.extend(network_seq.commands)
         
-    def get_apb_settings(self, network_type: NetworkType) -> BirdCommandSequence:
+    def get_apb_settings(self) -> BirdCommandSequence:
         """Get APB settings for a specific network type."""
-        if network_type.broadcast_type == BroadcastType.DIRECT:
-            # For direct access, use AXI2AHB settings
-            return self.axi2ahb.get_apb_settings()
-            
-        elif network_type.broadcast_type in [
-            BroadcastType.PEG_MSS_BRCST,
-            BroadcastType.SUPER_PE_BRCST,
-            BroadcastType.SUPER_PE_ID_BRCST,
-            BroadcastType.SUPER_MSS_BRCST,
-            BroadcastType.PEG_PE_BRCST
-        ]:
-            # Return our pre-built broadcast sequence
-            return self.broadcast_sequence
-            
-        else:
-            raise ValueError(f"Unsupported broadcast type: {network_type.broadcast_type}")
+        return self.broadcast_sequence
             
     def get_network_switch(self, network_type: NetworkType) -> BirdCommandSequence:
         """Get APB settings to switch to a specific network type.

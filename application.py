@@ -62,7 +62,7 @@ class Application:
         Returns:
             List of BirdCommandSequence objects containing all initialization commands
         """
-        all_sequences = []
+        all_sequences = [self.grid.get_apb_settings()]
         current_network = None
         
         # Collect all command sequences from kernels

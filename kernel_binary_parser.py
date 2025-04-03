@@ -33,8 +33,8 @@ class KernelBinary(Enum):
             NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.VCORE),
             []
         )
-        for addr, data in self.contents:
-            seq.add_command(BirdCommand(BirdCommandType.DMA, addr, data))
+        for addr, bytes in self.contents:
+            seq.add_command(BirdCommand(BirdCommandType.DMA, addr, bytes))
         return seq
 
     @property

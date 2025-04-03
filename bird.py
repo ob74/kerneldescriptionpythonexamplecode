@@ -52,7 +52,7 @@ class NetworkType:
 class BirdCommand:
     type: BirdCommandType
     dst_addr: int
-    data: Union[int, bytes]  # single 32-bit value for SINGLE, list of values for DMA
+    data: Union[int, bytes]  # single 32-bit value for SINGLE, bytes for DMA
 
     def __post_init__(self):
         if self.type == BirdCommandType.SINGLE and not isinstance(self.data, int):
@@ -66,26 +66,21 @@ class BirdCommand:
         """Convert command to byte sequence.
         
         Format:
-        SINGLE: [type(1B)] [total_len(4B)] [dst_addr(4B)] [data(4B)]
-        DMA: [type(1B)] [total_len(4B)] [dst_addr(4B)] [data_len(4B)] [data(Nx4B)]
+        SINGLE: [type(1B)] [dst_addr(4B)] [data(4B)]
+        DMA: [type(1B)] [dst_addr(4B)] [data_len(4B)] [data(bytes)]
         """
         if self.type in [BirdCommandType.SINGLE, BirdCommandType.SAFE_SINGLE]:
-            total_len = 13  # 1 + 4 + 4 + 4
             return (
-                bytes([1 if self.type == BirdCommandType.SINGLE else 3]) +                          # type = 1 for SINGLE
-                total_len.to_bytes(4, 'little') +     # total length
-                self.dst_addr.to_bytes(4, 'little') + # destination address
-                self.data.to_bytes(4, 'little')       # data
+                bytes([1 if self.type == BirdCommandType.SINGLE else 3]) +  # type = 1 for SINGLE, 3 for SAFE_SINGLE
+                self.dst_addr.to_bytes(4, 'little') +                       # destination address
+                self.data.to_bytes(4, 'little')                            # data
             )
         else:  # DMA
-            data_bytes = b''.join(x.to_bytes(4, 'little') for x in self.data)
-            total_len = 13 + len(data_bytes)  # 1 + 4 + 4 + 4 + data_len
             return (
-                bytes([2]) +                          # type = 2 for DMA
-                total_len.to_bytes(4, 'little') +     # total length
-                self.dst_addr.to_bytes(4, 'little') + # destination address
-                len(self.data).to_bytes(4, 'little') +# number of data words
-                data_bytes                            # data
+                bytes([2]) +                                               # type = 2 for DMA
+                self.dst_addr.to_bytes(4, 'little') +                     # destination address
+                (len(self.data) // 4).to_bytes(4, 'little') +            # number of 32-bit words
+                self.data                                                 # data already in bytes
             )
 
 @dataclass
@@ -98,9 +93,19 @@ class BirdCommandSequence:
         self.commands.append(command)
 
     def add_single_command(self, dst_addr: int, data: int, safe: bool = False):
-        self.commands.append(BirdCommand(BirdCommandType.SINGLE if not safe else BirdCommandType.SAFE_SINGLE, dst_addr, data))
+        self.commands.append(BirdCommand(
+            BirdCommandType.SINGLE if not safe else BirdCommandType.SAFE_SINGLE,
+            dst_addr,
+            data
+        ))
 
-    def add_dma_command(self, dst_addr: int, data: List[int]):
+    def add_dma_command(self, dst_addr: int, data: bytes):
+        """Add a DMA command with raw bytes data.
+        
+        Args:
+            dst_addr: Destination address
+            data: Raw bytes to be transferred
+        """
         self.commands.append(BirdCommand(BirdCommandType.DMA, dst_addr, data))
 
     def to_bytes(self) -> bytes:
@@ -119,14 +124,15 @@ class BirdCommandSequence:
         for i, cmd in enumerate(self.commands, 1):
             lines.append(f"\n{i}. {cmd.type.value.upper()} command")
             lines.append(f"   Destination: 0x{cmd.dst_addr:08X}")
-            if cmd.type == BirdCommandType.SINGLE:
+            if cmd.type in [BirdCommandType.SINGLE, BirdCommandType.SAFE_SINGLE]:  # Check both SINGLE types
                 lines.append(f"   Data: 0x{cmd.data:08X}")
             else:  # DMA
-                lines.append(f"   Data ({len(cmd.data)} words):")
-                # Split data into chunks of 8
-                for j in range(0, len(cmd.data), 8):
-                    chunk = cmd.data[j:j+8]
-                    hex_chunk = [f"0x{x:08X}" for x in chunk]
+                lines.append(f"   Data ({len(cmd.data)} bytes):")
+                # Split data into 32-bit words for display
+                words = [cmd.data[i:i+4] for i in range(0, len(cmd.data), 4)]
+                for j in range(0, len(words), 8):
+                    chunk = words[j:j+8]
+                    hex_chunk = [f"0x{int.from_bytes(word, 'little'):08X}" for word in chunk]
                     lines.append(f"      {' '.join(hex_chunk)}")
         
         lines.append("=" * 80)  # Closing separator line

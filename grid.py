@@ -28,9 +28,9 @@ class Grid:
         """
         return self.noc.add_broadcast_network(supergroup, network_type)
         
-    def get_apb_settings(self, network_type: NetworkType) -> BirdCommandSequence:
+    def get_apb_settings(self) -> BirdCommandSequence:
         """Get APB settings for a specific network type."""
-        return self.noc.get_apb_settings(network_type)
+        return self.noc.get_apb_settings()
             
     def get_network_switch(self, network_type: NetworkType) -> BirdCommandSequence:
         """Get APB settings to switch to a specific network type.
