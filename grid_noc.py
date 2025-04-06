@@ -45,7 +45,7 @@ class GridNOC:
             supergroup
         )
         # Add its settings to our sequence
-        network_seq = network.get_apb_settings(supergroup)
+        network_seq = network.get_apb_settings()
         self.broadcast_sequence.commands.extend(network_seq.commands)
         
     def get_apb_settings(self) -> BirdCommandSequence:
