@@ -11,13 +11,17 @@ class GridNOC:
         self.axi2ahb = AXI2AHB()
         # Command sequence for all broadcast networks
         self.broadcast_sequence = BirdCommandSequence(
-            description="NOC Broadcast Network Configuration",
-            network_type=NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.VCORE),
+            description="NOC Broadcast and AXI2AHB Network Configuration",
+            network_type=NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
             commands=[]
         )
         
         # Initialize AXI2AHB with all network types
         self._init_axi2ahb_networks()
+        axi2ahb_seq = self.axi2ahb.get_apb_settings()
+        assert (axi2ahb_seq.network_type.broadcast_type == BroadcastType.DIRECT)
+        assert (axi2ahb_seq.network_type.destination_type == GridDestinationType.APB)
+        self.broadcast_sequence.commands.extend(axi2ahb_seq.commands)
         
     def _init_axi2ahb_networks(self):
         """Initialize AXI2AHB with all network types"""

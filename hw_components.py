@@ -475,7 +475,7 @@ class AXI2AHB(HWComponent):
         
         seq = BirdCommandSequence(
             description=f"AXI2AHB Bridge Switch to {network_type.value}",
-            network_type=network_type,
+            network_type=NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
             commands=[]
         )
         
