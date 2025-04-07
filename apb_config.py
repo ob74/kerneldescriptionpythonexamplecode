@@ -10,7 +10,7 @@ def broadcast_config(
         group_size_x: int = -1,        # size_x of peg. if not given will be group_size / 2
         supergroup_size_x: int = -1     # size_x of supergroup. if not given will be supergroup_size / 2
 ):
-    reg_list = []
+    reg_list = [(0x1000, 0x5000), (0x1004, 0x0000), (0x1008, 0x0000), (0x100C, 0x0000), (0x1010, 0x0000), (0x1014, 0x0000)]
   
     return reg_list
 
@@ -32,7 +32,7 @@ def barrier_config(
         group_size_x = -1
 
 ):
-    reg_list = []
+    reg_list = [(0x1000, 0x5000), (0x1004, 0x0000), (0x1008, 0x0000), (0x100C, 0x0000), (0x1010, 0x0000), (0x1014, 0x0000)]
 
     return reg_list
 
@@ -41,14 +41,14 @@ def config_vcore(
         size_y: int,
         swap_mode: int
 ):
-    reg_list = []
+    reg_list = [(0x1000, 0x5000), (0x1004, 0x0000), (0x1008, 0x0000), (0x100C, 0x0000), (0x1010, 0x0000), (0x1014, 0x0000)]
 
     return reg_list
 
 def start_axi2ahb(
         cluster_number: int
 ):
-    reg_list = []
+    reg_list = [(0x1000, 0x5000), (0x1004, 0x0000), (0x1008, 0x0000), (0x100C, 0x0000), (0x1010, 0x0000), (0x1014, 0x0000)]
 
     return reg_list
 
@@ -56,7 +56,7 @@ def switch_axi2ahb_netowrk(
         network_string: str, # assumes 2 char string. first char is the brcst network number, second is the dst_type (sbits).
         cluster_number: int
 ):
-    reg_list = []
+    reg_list = [(0x1000, 0x5000), (0x1004, 0x0000), (0x1008, 0x0000), (0x100C, 0x0000), (0x1010, 0x0000), (0x1014, 0x0000)]
 
     return reg_list
 

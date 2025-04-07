@@ -7,7 +7,7 @@ from kernel_types import (
     ResourceRequirement, MemoryRequirement, DMARequirement, BarrierRequirement, ElementField,
     KernelLocation, KernelSuperGroup
 )
-from bird import BirdCommandSequence, NetworkType, BroadcastType, GridDestinationType
+from bird import BirdCommandSequence, NetworkType, BroadcastType, GridDestinationType, BirdCommand, BirdCommandType
 from apb_config import config_vcore, broadcast_config, barrier_config
 
 class HWComponent:
@@ -385,7 +385,7 @@ class BroadCastNetwork(HWComponent):
         kernel_x_size, kernel_y_size = self.supergroup._get_kernel_dimensions()
         first_location = self.supergroup.get_kernel_locations()[0]
 
-        brcs_apb_regs = broadcast_config(
+        return broadcast_config(
                     broadcast_type = 0,
                     broadcast_group_number = self.noc_network_id,
                     pe_number = first_location.x * 0x10 + first_location.y,
@@ -402,23 +402,12 @@ class BroadCastNetwork(HWComponent):
         # as the settings apply to the entire network
         brcs_apb_regs = self.wrap_apb_generator()
 
-        base_address = 0x60000000 + (self.noc_network_id * 0x1000)
-        
-        seq = BirdCommandSequence(
+        return BirdCommandSequence(
             f"NOC Broadcast Network {self.name} APB settings",
             NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
-            []
+            [BirdCommand(BirdCommandType.SINGLE, addr, data) for addr, data in brcs_apb_regs]
         )
         
-        seq.add_single_command(base_address + 0x00, self.noc_network_id)
-        seq.add_single_command(base_address + 0x04, 1)
-        seq.add_single_command(base_address + 0x08, self.supergroup.size_x)
-        seq.add_single_command(base_address + 0x0C, self.supergroup.size_y)
-        seq.add_single_command(base_address + 0x10, self.supergroup.x)
-        seq.add_single_command(base_address + 0x14, self.supergroup.y)
-        
-        return seq
-
 
 class AXI2AHB(HWComponent):
     """Class representing the AXI2AHB bridge configuration for all networks"""

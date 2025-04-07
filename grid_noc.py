@@ -28,6 +28,7 @@ class GridNOC:
         # Initialize for each network type
         self.axi2ahb.add_network(NetworkType(BroadcastType.DIRECT, GridDestinationType.APB))
         self.axi2ahb.add_network(NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.APB))
+        self.axi2ahb.add_network(NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.APB))
         self.axi2ahb.add_network(NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.VCORE))
         self.axi2ahb.add_network(NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.MSS))
         
