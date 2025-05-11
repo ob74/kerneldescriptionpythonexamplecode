@@ -1,4 +1,5 @@
 from typing import Dict, List, Optional, Tuple, Any
+import math
 from enum import Enum
 from hw_resources import ResourceScope, NOCBroadCastResource, AXI2AHBResource
 from kernel_types import (
@@ -6,8 +7,8 @@ from kernel_types import (
     ResourceRequirement, MemoryRequirement, DMARequirement, BarrierRequirement, ElementField,
     KernelLocation, KernelSuperGroup
 )
-from bird import BirdCommandSequence, NetworkType, BroadcastType, GridDestinationType
-
+from bird import BirdCommandSequence, NetworkType, BroadcastType, GridDestinationType, BirdCommand, BirdCommandType
+from apb_config import config_vcore, broadcast_config, barrier_config
 
 class HWComponent:
     """Base class for hardware components"""
@@ -64,18 +65,13 @@ class KernelSizeComponent(HWComponent):
         
         seq = BirdCommandSequence(
             f"Kernel Size APB settings for {self.name}",
-            NetworkType(BroadcastType.SUPER_PE_BRCST, GridDestinationType.APB),
+            NetworkType(BroadcastType.SUPER_MSS_BRCST, GridDestinationType.APB),
             []
         )
         # Apply settings for each location in the supergroup
-        for location in supergroup.get_kernel_locations():
-            base_address = 0x50000000 + (location.x * 0x10000) + (location.y * 0x1000)
-            if location.is_vcore:
-                base_address += location.vcore * 0x100
-            
-            seq.add_single_command(base_address + 0x00, x_size)
-            seq.add_single_command(base_address + 0x04, y_size)
-        
+        vcore_apb_regs = config_vcore(x_size, y_size, 0)
+        for addr, data in vcore_apb_regs:
+            seq.add_single_command(addr, data)
         return seq
 
     def get_dimensions(self) -> Tuple[int, int]:
@@ -384,27 +380,34 @@ class BroadCastNetwork(HWComponent):
         first_location = self.supergroup.get_kernel_locations()[0]
         return [NOCBroadCastResource(brcst_id=self.noc_network_id)]
 
-    def get_apb_settings(self, supergroup: KernelSuperGroup) -> BirdCommandSequence:
+    def wrap_apb_generator(self):
+
+        kernel_x_size, kernel_y_size = self.supergroup._get_kernel_dimensions()
+        first_location = self.supergroup.get_kernel_locations()[0]
+
+        return broadcast_config(
+                    broadcast_type = 0,
+                    broadcast_group_number = self.noc_network_id,
+                    pe_number = first_location.x * 0x10 + first_location.y,
+                    group_start_pe = first_location.x * 0x10 + first_location.y,
+                    group_size = math.log2(kernel_x_size * kernel_y_size),
+                    supergroup_size = math.log2(self.supergroup.size_x * self.supergroup.size_y),
+                    group_size_x = math.log2(kernel_x_size),
+                    supergroup_size_x = math.log2(self.supergroup.size_x),
+        )
+
+    def get_apb_settings(self) -> BirdCommandSequence:
         """Returns APB settings for the broadcast network"""
         # For broadcast networks, we don't need to iterate through locations
         # as the settings apply to the entire network
-        base_address = 0x60000000 + (self.noc_network_id * 0x1000)
-        
-        seq = BirdCommandSequence(
+        brcs_apb_regs = self.wrap_apb_generator()
+
+        return BirdCommandSequence(
             f"NOC Broadcast Network {self.name} APB settings",
             NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
-            []
+            [BirdCommand(BirdCommandType.SINGLE, addr, data) for addr, data in brcs_apb_regs]
         )
         
-        seq.add_single_command(base_address + 0x00, self.noc_network_id)
-        seq.add_single_command(base_address + 0x04, 1)
-        seq.add_single_command(base_address + 0x08, self.supergroup.size_x)
-        seq.add_single_command(base_address + 0x0C, self.supergroup.size_y)
-        seq.add_single_command(base_address + 0x10, self.supergroup.x)
-        seq.add_single_command(base_address + 0x14, self.supergroup.y)
-        
-        return seq
-
 
 class AXI2AHB(HWComponent):
     """Class representing the AXI2AHB bridge configuration for all networks"""
@@ -475,7 +478,7 @@ class AXI2AHB(HWComponent):
         
         seq = BirdCommandSequence(
             description=f"AXI2AHB Bridge Switch to {network_type.value}",
-            network_type=network_type,
+            network_type=NetworkType(BroadcastType.DIRECT, GridDestinationType.APB),
             commands=[]
         )
         

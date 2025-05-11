@@ -116,7 +116,10 @@ def example_application():
 
 
 if __name__ == "__main__":
-    # result = example_application()
+    result = example_application()
 
     test_haps_g_single()
+    test_full_chip_g_single()
+    test_haps_gs()
+    
            
