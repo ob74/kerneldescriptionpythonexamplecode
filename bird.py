@@ -89,8 +89,6 @@ class BirdCommandSequence:
     network_type: NetworkType
     commands: List[BirdCommand]
 
-    def add_command(self, command: BirdCommand):
-        self.commands.append(command)
 
     def add_single_command(self, dst_addr: int, data: int, safe: bool = False):
         self.commands.append(BirdCommand(
@@ -106,6 +104,9 @@ class BirdCommandSequence:
             dst_addr: Destination address
             data: Raw bytes to be transferred
         """
+        # Ensure data is a multiple of 4 bytes
+        if len(data) % 16 != 0:
+            raise ValueError("Data must be a multiple of 16 bytes")
         self.commands.append(BirdCommand(BirdCommandType.DMA, dst_addr, data))
 
     def to_bytes(self) -> bytes:

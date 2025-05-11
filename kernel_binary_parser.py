@@ -34,7 +34,7 @@ class KernelBinary(Enum):
             []
         )
         for addr, bytes in self.contents:
-            seq.add_command(BirdCommand(BirdCommandType.DMA, addr, bytes))
+            seq.add_dma_command( addr, bytes)
         return seq
 
     @property
@@ -73,8 +73,61 @@ class MemoryDecoder:
                         print(f"Warning: Invalid hex data in file {self.filename} at address {hex(addr)}: {data}")
                         print(f"Error details: {str(e)}")
                         break
-        return self._unify_memory(memory_map)
+        return self.align_data_segments(self._unify_memory(memory_map), 16)
     
+
+    def align_data_segments(self,
+        segments: List[Tuple[int, bytes]],
+        alignment: int
+    ) -> List[Tuple[int, bytes]]:
+        
+        if not segments:
+            return []
+
+        aligned_segments = []
+        prev_end_addr = 0  # initialize previous end address
+
+        for i, (addr, data) in enumerate(segments):
+            # Find the aligned start address downward, not exceeding the current address
+            aligned_start_addr = (addr // alignment) * alignment
+
+            # Determine the start address for this segment: should not be higher than original
+            start_addr = min(addr, aligned_start_addr)
+
+            # Calculate padding before data (if aligned_start_addr < addr)
+            padding_before = addr - start_addr
+            data_with_padding = bytes([0] * padding_before) + data
+
+            # Determine the maximum size to avoid overlapping with the next segment
+            if i + 1 < len(segments):
+                next_addr = segments[i + 1][0]
+            else:
+                # No next segment; assume large space
+                next_addr = start_addr + len(data_with_padding) + alignment
+
+            max_end = next_addr  # prevent overlap with next segment
+            max_size = max_end - start_addr
+
+            # Pad data to meet alignment, or truncate if needed
+            size_padding = (alignment - (len(data_with_padding) % alignment)) % alignment
+            total_size = len(data_with_padding) + size_padding
+
+            if start_addr + total_size > max_end:
+                total_size = max_end - start_addr
+                if total_size < len(data_with_padding):
+                    # truncate data to avoid overlap
+                    data_with_padding = data_with_padding[:total_size]
+                    total_size = len(data_with_padding)
+                else:
+                    # pad as much as possible
+                    data_with_padding += bytes([0] * (total_size - len(data_with_padding)))
+
+            # Append this aligned segment
+            aligned_segments.append((start_addr, data_with_padding))
+            prev_end_addr = start_addr + len(data_with_padding)
+
+        return aligned_segments
+
     def _unify_memory(self, memory_map: dict) -> List[Tuple[int, bytes]]:
         sorted_addrs = sorted(memory_map.keys())
         unified_memory = []
