@@ -87,13 +87,22 @@ class DimensionRequirement:
 @dataclass
 class MemoryRequirement:
     size: int
-    dimension_reqs: List[DimensionRequirement]  # [PE, MSS, Slice] requirements
+    pe_req: DimensionRequirement           # PE dimension requirement
+    mss_req: DimensionRequirement          # MSS dimension requirement  
+    slice_req: DimensionRequirement        # Slice dimension requirement
     allocation_mode: SliceAllocationMode = SliceAllocationMode.SERIAL
     allocation_id: str = ""
     
     # State tracking fields
     state: RequirementState = field(default=RequirementState.PENDING)
     allocation_details: Optional[AllocationDetails] = field(default=None)
+    
+    # Internal list for algorithm compatibility (auto-generated)
+    dimension_reqs: List[DimensionRequirement] = field(init=False)
+    
+    def __post_init__(self):
+        """Create internal dimension_reqs list from explicit requirements"""
+        self.dimension_reqs = [self.pe_req, self.mss_req, self.slice_req]
     
     def get_dimension_sizes(self, memory_manager) -> List[int]:
         return [memory_manager.pe_count, memory_manager.mss_per_pe, memory_manager.slices_per_mss]
@@ -437,6 +446,9 @@ class MappingCentricMemoryManager:
         # Track all requirements that have been processed
         self.processed_requirements: List[MemoryRequirement] = []
         
+        # Track collected requirements waiting for batch allocation
+        self.collected_requirements: List[MemoryRequirement] = []
+        
         # Initialize with universal mapping covering all coordinates
         self._initialize_universal_mapping()
         
@@ -628,6 +640,156 @@ class MappingCentricMemoryManager:
         
         print(f"{'='*60}")
 
+    def collect_requirement(self, req: MemoryRequirement) -> None:
+        """Collect a requirement for later batch allocation"""
+        self.collected_requirements.append(req)
+    
+    def allocate_all(self) -> Dict[str, Any]:
+        """
+        Allocate all collected requirements in optimal order to minimize conflicts.
+        Returns summary of allocation results.
+        """
+        if not self.collected_requirements:
+            return {
+                'total_requirements': 0,
+                'successful_allocations': 0,
+                'failed_allocations': 0,
+                'allocation_details': []
+            }
+        
+        # Sort requirements to minimize conflicts and forking
+        ordered_requirements = self._optimize_requirement_order(self.collected_requirements.copy())
+        
+        allocation_results = []
+        successful_count = 0
+        failed_count = 0
+        
+        print(f"Allocating {len(ordered_requirements)} requirements in optimized order...")
+        print()
+        
+        for i, req in enumerate(ordered_requirements, 1):
+            print(f"Step {i}: Allocating '{req.allocation_id}' ({req.size:,} bytes)")
+            
+            # Record state before allocation
+            mappings_before = len(self.signature_to_map)
+            
+            # Attempt allocation
+            success = self.allocate_requirement(req)
+            
+            # Record state after allocation
+            mappings_after = len(self.signature_to_map)
+            fork_occurred = mappings_after > mappings_before
+            
+            result = {
+                'requirement_id': req.allocation_id,
+                'size': req.size,
+                'success': success,
+                'mappings_before': mappings_before,
+                'mappings_after': mappings_after,
+                'fork_occurred': fork_occurred,
+                'allocation_details': req.allocation_details if success else None
+            }
+            
+            allocation_results.append(result)
+            
+            if success:
+                successful_count += 1
+                fork_msg = f" (forked: {mappings_before} -> {mappings_after})" if fork_occurred else " (no fork)"
+                print(f"  [SUCCESS]{fork_msg}")
+                if req.allocation_details:
+                    print(f"  Address: 0x{req.allocation_details.allocated_address:08x}")
+            else:
+                failed_count += 1
+                print(f"  [FAILED] Could not allocate")
+            print()
+        
+        # Clear collected requirements after processing
+        self.collected_requirements.clear()
+        
+        return {
+            'total_requirements': len(ordered_requirements),
+            'successful_allocations': successful_count,
+            'failed_allocations': failed_count,
+            'allocation_details': allocation_results
+        }
+    
+    def _optimize_requirement_order(self, requirements: List[MemoryRequirement]) -> List[MemoryRequirement]:
+        """
+        Order requirements to minimize conflicts and mapping forking.
+        Strategy: Process broadest scopes first, then progressively narrow down.
+        """
+        def requirement_priority(req: MemoryRequirement) -> Tuple[int, int, int, int]:
+            """
+            Return priority tuple for sorting. Lower values = higher priority.
+            Priority order:
+            1. Scope breadth (ALL > SPECIFIC > GROUP)
+            2. Number of auto-selections (fewer = higher priority)
+            3. Size (larger = higher priority) 
+            4. Allocation mode (SERIAL > PARALLEL for consistency)
+            """
+            # Calculate scope breadth score (lower = broader scope)
+            scope_score = 0
+            for dim_req in req.dimension_reqs:
+                if dim_req.scope == DimensionScope.ALL:
+                    scope_score += 0  # Broadest scope
+                elif dim_req.scope == DimensionScope.SPECIFIC:
+                    scope_score += 1 if dim_req.value is not None else 2  # Specific > Auto-select
+                elif dim_req.scope == DimensionScope.GROUP:
+                    scope_score += 1  # Between ALL and SPECIFIC
+            
+            # Count auto-selections (more auto-selections = lower priority)
+            auto_selection_count = sum(1 for dim_req in req.dimension_reqs if dim_req.needs_selection())
+            
+            # Size priority (larger = higher priority, so negate)
+            size_priority = -req.size
+            
+            # Allocation mode priority (SERIAL = 0, PARALLEL = 1)
+            mode_priority = 1 if req.allocation_mode == SliceAllocationMode.PARALLEL else 0
+            
+            return (scope_score, auto_selection_count, size_priority, mode_priority)
+        
+        # Sort by priority
+        sorted_requirements = sorted(requirements, key=requirement_priority)
+        
+        print("Requirement ordering strategy:")
+        print("  1. Process broadest scopes first (ALL > SPECIFIC > GROUP)")
+        print("  2. Minimize auto-selections early")
+        print("  3. Prioritize larger allocations")
+        print("  4. Process serial allocations before parallel")
+        print()
+        
+        for i, req in enumerate(sorted_requirements, 1):
+            scope_desc = self._describe_requirement_scope(req)
+            print(f"  {i}. {req.allocation_id}: {scope_desc} ({req.size:,} bytes)")
+        print()
+        
+        return sorted_requirements
+    
+    def _describe_requirement_scope(self, req: MemoryRequirement) -> str:
+        """Generate human-readable description of requirement scope"""
+        pe_desc = self._describe_dimension_scope(req.dimension_reqs[0], "PE")
+        mss_desc = self._describe_dimension_scope(req.dimension_reqs[1], "MSS") 
+        slice_desc = self._describe_dimension_scope(req.dimension_reqs[2], "Slice")
+        
+        mode_desc = " PARALLEL" if req.allocation_mode == SliceAllocationMode.PARALLEL else ""
+        
+        return f"{pe_desc} × {mss_desc} × {slice_desc}{mode_desc}"
+    
+    def _describe_dimension_scope(self, dim_req: DimensionRequirement, dim_name: str) -> str:
+        """Describe a single dimension requirement"""
+        if dim_req.scope == DimensionScope.ALL:
+            return f"All-{dim_name}"
+        elif dim_req.scope == DimensionScope.SPECIFIC:
+            if dim_req.value is not None:
+                return f"{dim_name}{dim_req.value}"
+            else:
+                return f"Auto-{dim_name}"
+        elif dim_req.scope == DimensionScope.GROUP:
+            group_name = dim_req.group.value.replace("group_", "")
+            return f"{dim_name}-{group_name}"
+        else:
+            return f"Unknown-{dim_name}"
+
 
 # Unit Tests
 def test_basic_serial_allocation():
@@ -640,11 +802,9 @@ def test_basic_serial_allocation():
     # Create requirement: 1KB in all PEs, all MSS, all slices (should not fork)
     req = MemoryRequirement(
         size=1024,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),  # All PEs
-            DimensionRequirement(DimensionScope.ALL),  # All MSS  
-            DimensionRequirement(DimensionScope.ALL)   # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="test_alloc_uniform"
     )
     
@@ -667,11 +827,9 @@ def test_pe_specific_forking():
     # Create requirement: 1KB in PE 0 only, all MSS, all slices (should fork)
     req = MemoryRequirement(
         size=1024,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.SPECIFIC, value=0),  # PE 0 only
-            DimensionRequirement(DimensionScope.ALL),                 # All MSS
-            DimensionRequirement(DimensionScope.ALL)                  # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="pe0_specific"
     )
     
@@ -694,11 +852,9 @@ def test_mss_specific_forking():
     # Create requirement: 1KB in all PEs, MSS 1 only, all slices (should fork)
     req = MemoryRequirement(
         size=1024,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),                 # All PEs
-            DimensionRequirement(DimensionScope.SPECIFIC, value=1),   # MSS 1 only
-            DimensionRequirement(DimensionScope.ALL)                  # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),
+        mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=1),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="mss1_specific"
     )
     
@@ -721,11 +877,9 @@ def test_slice_group_forking():
     # Create requirement: 1KB in all PEs, all MSS, slice group 0-3 only (should fork)
     req = MemoryRequirement(
         size=1024,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),                               # All PEs
-            DimensionRequirement(DimensionScope.ALL),                               # All MSS
-            DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_0_3)  # Slices 0-3 only
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_0_3),
         allocation_mode=SliceAllocationMode.PARALLEL,
         allocation_id="slice_group_0_3"
     )
@@ -749,11 +903,9 @@ def test_automatic_resource_selection():
     # Create requirement: 1KB in some specific PE (unspecified), all MSS, all slices
     req = MemoryRequirement(
         size=1024,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Unspecified PE
-            DimensionRequirement(DimensionScope.ALL),                    # All MSS
-            DimensionRequirement(DimensionScope.ALL)                     # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=None),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="auto_pe_selection"
     )
     
@@ -780,11 +932,9 @@ def test_complex_multiple_requirements():
     # Requirement 1: Global allocation (should not fork)
     req1 = MemoryRequirement(
         size=512,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),  # All PEs
-            DimensionRequirement(DimensionScope.ALL),  # All MSS  
-            DimensionRequirement(DimensionScope.ALL)   # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="global_data"
     )
     
@@ -797,11 +947,9 @@ def test_complex_multiple_requirements():
     # Requirement 2: PE-specific allocation (should fork)
     req2 = MemoryRequirement(
         size=256,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.SPECIFIC, value=0),  # PE 0 only
-            DimensionRequirement(DimensionScope.ALL),                 # All MSS
-            DimensionRequirement(DimensionScope.ALL)                  # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="pe0_cache"
     )
     
@@ -814,11 +962,9 @@ def test_complex_multiple_requirements():
     # Requirement 3: MSS-specific allocation (should cause additional fork)
     req3 = MemoryRequirement(
         size=128,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),                 # All PEs
-            DimensionRequirement(DimensionScope.SPECIFIC, value=0),   # MSS 0 only
-            DimensionRequirement(DimensionScope.ALL)                  # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),
+        mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="mss0_buffer"
     )
     
@@ -831,11 +977,9 @@ def test_complex_multiple_requirements():
     # Requirement 4: Slice group allocation (should cause more forking)
     req4 = MemoryRequirement(
         size=1024,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.SPECIFIC, value=1),                 # PE 1 only
-            DimensionRequirement(DimensionScope.SPECIFIC, value=1),                 # MSS 1 only
-            DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_0_3)  # Slice group 0-3
-        ],
+        pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=1),
+        mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=1),
+        slice_req=DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_0_3),
         allocation_mode=SliceAllocationMode.PARALLEL,
         allocation_id="pe1_mss1_slice_group"
     )
@@ -861,11 +1005,9 @@ def test_cross_mapping_allocation():
     # First, create an allocation that causes a fork
     req1 = MemoryRequirement(
         size=512,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.SPECIFIC, value=0),  # PE 0 only
-            DimensionRequirement(DimensionScope.ALL),                 # All MSS
-            DimensionRequirement(DimensionScope.ALL)                  # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="fork_alloc"
     )
     
@@ -879,11 +1021,9 @@ def test_cross_mapping_allocation():
     # Now try allocation across all PEs (should span mappings)
     req2 = MemoryRequirement(
         size=256,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),                    # All PEs (spans mappings)
-            DimensionRequirement(DimensionScope.SPECIFIC, value=0),      # MSS 0
-            DimensionRequirement(DimensionScope.SPECIFIC, value=0)       # Slice 0
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),
+        mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0),
+        slice_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0),
         allocation_id="cross_mapping_alloc"
     )
     
@@ -901,11 +1041,9 @@ def test_allocation_failure():
     # Try to allocate more than slice size
     req = MemoryRequirement(
         size=2*1024*1024,  # 2MB > 1MB slice size
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),
-            DimensionRequirement(DimensionScope.ALL),
-            DimensionRequirement(DimensionScope.ALL)
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="too_big_alloc"
     )
     

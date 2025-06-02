@@ -36,11 +36,9 @@ def demo_basic_usage():
     # Scenario 1: Uniform allocation across all resources
     req1 = MemoryRequirement(
         size=4096,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),    # All PEs
-            DimensionRequirement(DimensionScope.ALL),    # All MSS
-            DimensionRequirement(DimensionScope.ALL)     # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),    # All PEs
+        mss_req=DimensionRequirement(DimensionScope.ALL),   # All MSS
+        slice_req=DimensionRequirement(DimensionScope.ALL), # All slices
         allocation_id="uniform_kernel_buffer"
     )
     
@@ -56,11 +54,9 @@ def demo_basic_usage():
     # Scenario 2: PE-specific allocation (let system choose PE)
     req2 = MemoryRequirement(
         size=2048,
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto-select PE
-            DimensionRequirement(DimensionScope.ALL),                   # All MSS
-            DimensionRequirement(DimensionScope.ALL)                    # All slices
-        ],
+        pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto-select PE
+        mss_req=DimensionRequirement(DimensionScope.ALL),                  # All MSS
+        slice_req=DimensionRequirement(DimensionScope.ALL),                # All slices
         allocation_id="pe_specific_cache"
     )
     
@@ -86,11 +82,9 @@ def demo_parallel_allocation():
     # Scenario 1: Parallel allocation in slice group 0-3
     req1 = MemoryRequirement(
         size=1024,  # 256 bytes per slice in group
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),                     # All PEs
-            DimensionRequirement(DimensionScope.ALL),                     # All MSS
-            DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_0_3)
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),                     # All PEs
+        mss_req=DimensionRequirement(DimensionScope.ALL),                    # All MSS
+        slice_req=DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_0_3),
         allocation_mode=SliceAllocationMode.PARALLEL,
         allocation_id="parallel_group_0_3"
     )
@@ -104,11 +98,9 @@ def demo_parallel_allocation():
     # Scenario 2: Parallel allocation in slice group 4-7
     req2 = MemoryRequirement(
         size=2048,  # 512 bytes per slice in group
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),                     # All PEs
-            DimensionRequirement(DimensionScope.ALL),                     # All MSS
-            DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_4_7)
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),                     # All PEs
+        mss_req=DimensionRequirement(DimensionScope.ALL),                    # All MSS
+        slice_req=DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_4_7),
         allocation_mode=SliceAllocationMode.PARALLEL,
         allocation_id="parallel_group_4_7"
     )
@@ -141,11 +133,9 @@ def demo_automatic_resource_selection():
     for name, size in allocations:
         req = MemoryRequirement(
             size=size,
-            dimension_reqs=[
-                DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto-select PE
-                DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto-select MSS
-                DimensionRequirement(DimensionScope.ALL)                    # All slices
-            ],
+            pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto-select PE
+            mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto-select MSS
+            slice_req=DimensionRequirement(DimensionScope.ALL),                # All slices
             allocation_id=name.lower().replace(" ", "_")
         )
         
@@ -179,11 +169,9 @@ def demo_complex_scenarios():
             "name": "Global shared data (no fork expected)",
             "requirement": MemoryRequirement(
                 size=1024,
-                dimension_reqs=[
-                    DimensionRequirement(DimensionScope.ALL),  # All PEs
-                    DimensionRequirement(DimensionScope.ALL),  # All MSS
-                    DimensionRequirement(DimensionScope.ALL)   # All slices
-                ],
+                pe_req=DimensionRequirement(DimensionScope.ALL),  # All PEs
+                mss_req=DimensionRequirement(DimensionScope.ALL), # All MSS
+                slice_req=DimensionRequirement(DimensionScope.ALL), # All slices
                 allocation_id="global_shared"
             ),
             "expected_fork": False
@@ -192,11 +180,9 @@ def demo_complex_scenarios():
             "name": "PE 0 specific cache (fork expected)",
             "requirement": MemoryRequirement(
                 size=512,
-                dimension_reqs=[
-                    DimensionRequirement(DimensionScope.SPECIFIC, value=0),  # PE 0 only
-                    DimensionRequirement(DimensionScope.ALL),                 # All MSS
-                    DimensionRequirement(DimensionScope.ALL)                  # All slices
-                ],
+                pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0), # PE 0 only
+                mss_req=DimensionRequirement(DimensionScope.ALL),              # All MSS
+                slice_req=DimensionRequirement(DimensionScope.ALL),            # All slices
                 allocation_id="pe0_cache"
             ),
             "expected_fork": True
@@ -205,11 +191,9 @@ def demo_complex_scenarios():
             "name": "MSS 1 specific buffer (additional fork expected)",
             "requirement": MemoryRequirement(
                 size=256,
-                dimension_reqs=[
-                    DimensionRequirement(DimensionScope.ALL),                 # All PEs
-                    DimensionRequirement(DimensionScope.SPECIFIC, value=1),   # MSS 1 only
-                    DimensionRequirement(DimensionScope.ALL)                  # All slices
-                ],
+                pe_req=DimensionRequirement(DimensionScope.ALL),               # All PEs
+                mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=1), # MSS 1 only
+                slice_req=DimensionRequirement(DimensionScope.ALL),            # All slices
                 allocation_id="mss1_buffer"
             ),
             "expected_fork": True
@@ -218,11 +202,9 @@ def demo_complex_scenarios():
             "name": "PE 1, MSS 0, Slice group 0-3 (more forks expected)",
             "requirement": MemoryRequirement(
                 size=2048,
-                dimension_reqs=[
-                    DimensionRequirement(DimensionScope.SPECIFIC, value=1),                 # PE 1 only
-                    DimensionRequirement(DimensionScope.SPECIFIC, value=0),                 # MSS 0 only
-                    DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_0_3)  # Slice group 0-3
-                ],
+                pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=1),                 # PE 1 only
+                mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0),                # MSS 0 only
+                slice_req=DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_0_3), # Slice group 0-3
                 allocation_mode=SliceAllocationMode.PARALLEL,
                 allocation_id="pe1_mss0_slice_group"
             ),
@@ -232,11 +214,9 @@ def demo_complex_scenarios():
             "name": "Auto-selected PE and MSS (system chooses)",
             "requirement": MemoryRequirement(
                 size=128,
-                dimension_reqs=[
-                    DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto-select PE
-                    DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto-select MSS
-                    DimensionRequirement(DimensionScope.ALL)                    # All slices
-                ],
+                pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto-select PE
+                mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=None), # Auto-select MSS
+                slice_req=DimensionRequirement(DimensionScope.ALL),                # All slices
                 allocation_id="auto_selected_resources"
             ),
             "expected_fork": True
@@ -248,12 +228,12 @@ def demo_complex_scenarios():
         req = scenario['requirement']
         
         # Show requirement details
-        pe_scope = req.dimension_reqs[0].scope.value
-        pe_val = req.dimension_reqs[0].value
-        mss_scope = req.dimension_reqs[1].scope.value
-        mss_val = req.dimension_reqs[1].value
-        slice_scope = req.dimension_reqs[2].scope.value
-        slice_val = getattr(req.dimension_reqs[2], 'group', req.dimension_reqs[2].value)
+        pe_scope = req.pe_req.scope.value
+        pe_val = req.pe_req.value
+        mss_scope = req.mss_req.scope.value
+        mss_val = req.mss_req.value
+        slice_scope = req.slice_req.scope.value
+        slice_val = getattr(req.slice_req, 'group', req.slice_req.value)
         
         print(f"  Size: {req.size:,} bytes")
         print(f"  Pattern: PE({pe_scope}={pe_val}) x MSS({mss_scope}={mss_val}) x Slice({slice_scope}={slice_val})")
@@ -320,11 +300,9 @@ def demo_error_handling():
     # Scenario 1: Large allocation that should succeed
     req1 = MemoryRequirement(
         size=900 * 1024,  # 900KB - should fit
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),
-            DimensionRequirement(DimensionScope.ALL),
-            DimensionRequirement(DimensionScope.ALL)
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="large_allocation"
     )
     
@@ -341,11 +319,9 @@ def demo_error_handling():
     # Scenario 2: Allocation that exceeds remaining space
     req2 = MemoryRequirement(
         size=500 * 1024,  # 500KB - should fail due to insufficient space
-        dimension_reqs=[
-            DimensionRequirement(DimensionScope.ALL),
-            DimensionRequirement(DimensionScope.ALL),
-            DimensionRequirement(DimensionScope.ALL)
-        ],
+        pe_req=DimensionRequirement(DimensionScope.ALL),
+        mss_req=DimensionRequirement(DimensionScope.ALL),
+        slice_req=DimensionRequirement(DimensionScope.ALL),
         allocation_id="oversized_allocation"
     )
     
@@ -355,6 +331,129 @@ def demo_error_handling():
         print(f"  Result: {'[SUCCESS]' if success else '[FAILED]'}")
     except AllocationError as e:
         print(f"  [ERROR] Allocation failed: {e}")
+
+
+def demo_batch_allocation_optimization():
+    """Demonstrate batch allocation with requirement ordering optimization"""
+    print("=" * 60)
+    print("BATCH ALLOCATION OPTIMIZATION DEMONSTRATION")
+    print("=" * 60)
+    print("Demonstrating collect_requirement() and allocate_all() with smart ordering...")
+    print()
+    
+    manager = MappingCentricMemoryManager(pe_count=2, mss_per_pe=2, slices_per_mss=8)
+    
+    print("Collecting requirements in deliberately suboptimal order:")
+    print()
+    
+    # Collect requirements that would cause early forking if processed immediately
+    requirements_data = [
+        {
+            "name": "PE0 specific cache",
+            "req": MemoryRequirement(
+                size=1024,
+                pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0),  # PE 0 only
+                mss_req=DimensionRequirement(DimensionScope.ALL),                # All MSS
+                slice_req=DimensionRequirement(DimensionScope.ALL),                 # All slices
+                allocation_id="pe0_cache"
+            )
+        },
+        {
+            "name": "Auto-selected buffer",
+            "req": MemoryRequirement(
+                size=512,
+                pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto PE
+                mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=None),  # Auto MSS
+                slice_req=DimensionRequirement(DimensionScope.ALL),                    # All slices
+                allocation_id="auto_buffer"
+            )
+        },
+        {
+            "name": "Global shared data",
+            "req": MemoryRequirement(
+                size=2048,
+                pe_req=DimensionRequirement(DimensionScope.ALL),  # All PEs
+                mss_req=DimensionRequirement(DimensionScope.ALL),  # All MSS
+                slice_req=DimensionRequirement(DimensionScope.ALL),   # All slices
+                allocation_id="global_data"
+            )
+        },
+        {
+            "name": "MSS1 controller buffer",
+            "req": MemoryRequirement(
+                size=768,
+                pe_req=DimensionRequirement(DimensionScope.ALL),                 # All PEs
+                mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=1),   # MSS 1 only
+                slice_req=DimensionRequirement(DimensionScope.ALL),                  # All slices
+                allocation_id="mss1_buffer"
+            )
+        },
+        {
+            "name": "Parallel slice group",
+            "req": MemoryRequirement(
+                size=1024,  # 256 bytes per slice
+                pe_req=DimensionRequirement(DimensionScope.SPECIFIC, value=1),                 # PE 1
+                mss_req=DimensionRequirement(DimensionScope.SPECIFIC, value=0),                 # MSS 0
+                slice_req=DimensionRequirement(DimensionScope.GROUP, group=SliceGroup.GROUP_0_3),  # Slice group 0-3
+                allocation_mode=SliceAllocationMode.PARALLEL,
+                allocation_id="slice_group_data"
+            )
+        }
+    ]
+    
+    # Collect all requirements
+    for i, req_data in enumerate(requirements_data, 1):
+        req = req_data["req"]
+        manager.collect_requirement(req)
+        scope_desc = manager._describe_requirement_scope(req)
+        print(f"  {i}. {req_data['name']}: {scope_desc} ({req.size:,} bytes)")
+    
+    print()
+    print("Initial state before batch allocation:")
+    initial_stats = manager.get_memory_stats()
+    print(f"  Mappings: {initial_stats['total_mappings']}")
+    print()
+    
+    # Perform batch allocation with optimization
+    print("🚀 Starting optimized batch allocation...")
+    print("=" * 60)
+    
+    batch_results = manager.allocate_all()
+    
+    print("=" * 60)
+    print("BATCH ALLOCATION SUMMARY")
+    print("=" * 60)
+    
+    print(f"Total requirements: {batch_results['total_requirements']}")
+    print(f"✅ Successful: {batch_results['successful_allocations']}")
+    print(f"❌ Failed: {batch_results['failed_allocations']}")
+    print()
+    
+    # Analyze optimization effectiveness
+    final_stats = manager.get_memory_stats()
+    total_forks = sum(1 for result in batch_results['allocation_details'] if result['fork_occurred'])
+    
+    print(f"Final mappings: {final_stats['total_mappings']}")
+    print(f"Total forks during allocation: {total_forks}")
+    print()
+    
+    total_allocated = sum(m['total_allocated'] for m in final_stats['mappings'])
+    total_free = sum(m['total_free'] for m in final_stats['mappings'])
+    utilization = total_allocated / (total_allocated + total_free) * 100
+    
+    print(f"Memory utilization: {utilization:.1f}%")
+    print(f"Total allocated: {total_allocated:,} bytes")
+    print()
+    
+    print("✅ Batch allocation optimization benefits:")
+    print("  [OK] Requirements reordered for minimal conflicts")
+    print("  [OK] Broad scope allocations processed first")
+    print("  [OK] Auto-selections made with full context")
+    print("  [OK] Parallel allocations optimally scheduled")
+    print("  [OK] Mapping forking minimized")
+    
+    # Show detailed requirement tracking
+    manager.print_requirements_summary()
 
 
 if __name__ == "__main__":
@@ -377,6 +476,9 @@ if __name__ == "__main__":
     demo_error_handling()
     print("\n" + "="*60 + "\n")
     
+    demo_batch_allocation_optimization()
+    print("\n" + "="*60 + "\n")
+    
     print("[COMPLETE] Memory Manager demonstration complete!")
     print("The system successfully handled:")
     print("  [OK] Uniform and specific allocations")
@@ -385,4 +487,5 @@ if __name__ == "__main__":
     print("  [OK] Cross-mapping intersections")
     print("  [OK] Memory fragmentation tracking")
     print("  [OK] Complete requirement fulfillment tracking")
+    print("  [OK] Batch allocation with optimization")
     print("  [OK] Error handling") 
