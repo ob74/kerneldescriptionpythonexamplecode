@@ -113,6 +113,10 @@ def test_batch_allocation_optimization():
     print(f"❌ Failed allocations: {batch_results['failed_allocations']}")
     print()
     
+    # Validate that total requested matches total allocated
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     # Show final state
     final_stats = manager.get_memory_stats()
     print(f"Final mapping count: {final_stats['total_mappings']}")
@@ -188,6 +192,10 @@ def compare_naive_vs_optimized():
     
     naive_final_mappings = len(manager_naive.signature_to_map)
     
+    # Validate naive approach
+    assert manager_naive.total_requested_allocations() == manager_naive.total_allocated_bytes(), \
+        f"Naive validation failed: requested={manager_naive.total_requested_allocations()} != allocated={manager_naive.total_allocated_bytes()}"
+    
     # Test optimized approach
     print("Testing OPTIMIZED approach (batch allocation with ordering)...")
     
@@ -222,6 +230,10 @@ def compare_naive_vs_optimized():
     batch_results = manager_optimized.allocate_all()
     optimized_forks = sum(1 for r in batch_results['allocation_details'] if r['fork_occurred'])
     optimized_final_mappings = len(manager_optimized.signature_to_map)
+    
+    # Validate optimized approach
+    assert manager_optimized.total_requested_allocations() == manager_optimized.total_allocated_bytes(), \
+        f"Optimized validation failed: requested={manager_optimized.total_requested_allocations()} != allocated={manager_optimized.total_allocated_bytes()}"
     
     # Compare results
     print("\nCOMPARISON RESULTS:")

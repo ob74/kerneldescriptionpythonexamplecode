@@ -154,6 +154,7 @@ Main memory manager implementing the multi-dimensional allocation system with th
 - `allocate_requirement(req)`: Immediate allocation of a single requirement
 - `get_requirements_summary()`: Get statistics about processed requirements
 - `print_requirements_summary()`: Print detailed requirement status
+- `total_allocated_bytes()`: Returns total allocated bytes across all coordinates
 
 ### MemoryRequirement
 Represents a memory allocation request with:
@@ -161,6 +162,13 @@ Represents a memory allocation request with:
 - **Allocation details**: Address, resolved dimensions, mapping count
 - **Dimension requirements**: Independent specifications for PE, MSS, and slice allocation
 - **Allocation mode**: Serial or parallel slice allocation
+- **Size calculation**: `total_allocation_size()` computes total bytes allocated across all affected coordinates
+
+Key methods:
+- `get_affected_coordinates()`: Returns all coordinate locations affected by this requirement
+- `total_allocation_size()`: Returns `size * number_of_affected_coordinates` - the total bytes allocated
+- `is_fulfilled()`: Check if requirement has been successfully allocated
+- `get_fulfillment_summary()`: Get detailed status string with allocation information
 
 ### AllocationDetails
 Contains fulfillment information:

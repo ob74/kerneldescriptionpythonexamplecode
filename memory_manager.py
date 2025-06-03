@@ -86,7 +86,14 @@ class DimensionRequirement:
 
 @dataclass
 class MemoryRequirement:
-    size: int
+    # Class variables for dimension sizes (shared across all instances)
+    # These are defined outside dataclass field annotations to be true class variables
+    pe_count = 0
+    mss_per_pe = 0
+    slices_per_mss = 0
+    
+    # Instance fields
+    size: int                              # number of bytes to allocate per slice
     pe_req: DimensionRequirement           # PE dimension requirement
     mss_req: DimensionRequirement          # MSS dimension requirement  
     slice_req: DimensionRequirement        # Slice dimension requirement
@@ -104,15 +111,22 @@ class MemoryRequirement:
         """Create internal dimension_reqs list from explicit requirements"""
         self.dimension_reqs = [self.pe_req, self.mss_req, self.slice_req]
     
-    def get_dimension_sizes(self, memory_manager) -> List[int]:
-        return [memory_manager.pe_count, memory_manager.mss_per_pe, memory_manager.slices_per_mss]
+    @classmethod
+    def set_system_dimensions(cls, pe_count: int, mss_per_pe: int, slices_per_mss: int):
+        """Set the system dimension sizes for all MemoryRequirement instances"""
+        cls.pe_count = pe_count
+        cls.mss_per_pe = mss_per_pe
+        cls.slices_per_mss = slices_per_mss
+    
+    def get_dimension_sizes(self) -> List[int]:
+        return [MemoryRequirement.pe_count, MemoryRequirement.mss_per_pe, MemoryRequirement.slices_per_mss]
     
     def needs_any_selection(self) -> bool:
         return any(req.needs_selection() for req in self.dimension_reqs)
     
-    def get_affected_coordinates(self, memory_manager) -> Set[ResourceCoordinate]:
+    def get_affected_coordinates(self) -> Set[ResourceCoordinate]:
         """Generate all coordinates affected by this requirement"""
-        dimension_sizes = self.get_dimension_sizes(memory_manager)
+        dimension_sizes = self.get_dimension_sizes()
         
         # Get possible values for each dimension
         possible_values = []
@@ -127,6 +141,41 @@ class MemoryRequirement:
                     coords.add(ResourceCoordinate(pe, mss, slice_id))
         
         return coords
+    
+    def total_allocation_size(self) -> int:
+        """
+        Calculate the total number of bytes that will be allocated for this requirement.
+        Returns size * number_of_affected_coordinates based on the requirement scopes.
+        For parallel allocation mode, the effective size per coordinate is size // 4.
+        """
+        dimension_sizes = self.get_dimension_sizes()
+        
+        # Calculate affected count for each dimension based on scope
+        affected_counts = []
+        for i, dim_req in enumerate(self.dimension_reqs):
+            if dim_req.scope == DimensionScope.ALL:
+                affected_counts.append(dimension_sizes[i])
+            elif dim_req.scope == DimensionScope.SPECIFIC:
+                # For SPECIFIC scope, always count as 1 regardless of whether value is resolved
+                affected_counts.append(1)
+            elif dim_req.scope == DimensionScope.GROUP:
+                # For GROUP scope, count the group size
+                group_values = dim_req._get_group_values(dim_req.group)
+                affected_counts.append(len(group_values))
+            else:
+                raise ValueError(f"Unknown scope: {dim_req.scope}")
+        
+        # Total coordinates = product of affected counts across all dimensions
+        total_coordinates = 1
+        for count in affected_counts:
+            total_coordinates *= count
+        
+        # For parallel allocation, the effective size per coordinate is divided by 4
+        effective_size = self.size
+        if self.allocation_mode == SliceAllocationMode.PARALLEL:
+            effective_size = self.size // 4
+        
+        return effective_size * total_coordinates
     
     def mark_fulfilled(self, allocated_address: int, resolved_req: 'MemoryRequirement', mapping_count: int):
         """Mark this requirement as fulfilled with allocation details"""
@@ -369,7 +418,7 @@ class UnifiedDimensionResolver:
     def _find_best_dimension_combination(self, req: MemoryRequirement, 
                                        unresolved_dimensions: List[int]) -> Tuple[int, ...]:
         """Find the best combination of values for unresolved dimensions"""
-        dimension_sizes = req.get_dimension_sizes(self.memory_manager)
+        dimension_sizes = req.get_dimension_sizes()
         
         # Generate all possible combinations for unresolved dimensions
         possible_combinations = []
@@ -440,6 +489,9 @@ class MappingCentricMemoryManager:
         self.mss_per_pe = mss_per_pe
         self.slices_per_mss = slices_per_mss
         
+        # Set the system dimensions for all MemoryRequirement instances
+        MemoryRequirement.set_system_dimensions(pe_count, mss_per_pe, slices_per_mss)
+        
         # Only store mappings - derive coordinate info from them
         self.signature_to_map: Dict[MappingSignature, SliceMemoryMap] = {}
         
@@ -474,7 +526,7 @@ class MappingCentricMemoryManager:
     
     def get_affected_mappings(self, req: MemoryRequirement) -> Set[SliceMemoryMap]:
         """Get all mappings that would be affected by this requirement"""
-        affected_coords = req.get_affected_coordinates(self)
+        affected_coords = req.get_affected_coordinates()
         affected_mappings = set()
         
         for coord in affected_coords:
@@ -485,7 +537,7 @@ class MappingCentricMemoryManager:
     
     def _fork_mapping_if_needed(self, req: MemoryRequirement) -> bool:
         """Fork mappings if the requirement doesn't cover all coordinates in existing mappings"""
-        affected_coords = req.get_affected_coordinates(self)
+        affected_coords = req.get_affected_coordinates()
         
         # Find all mappings that contain any of the affected coordinates
         mappings_to_check = set()
@@ -619,6 +671,39 @@ class MappingCentricMemoryManager:
             'pending_count': pending_count,
             'requirements': self.processed_requirements
         }
+    
+    def total_allocated_bytes(self) -> int:
+        """
+        Calculate the total number of bytes allocated across all coordinates in the system.
+        This multiplies each mapping's allocated bytes by the number of coordinates it covers.
+        """
+        total_bytes = 0
+        
+        for signature, memory_map in self.signature_to_map.items():
+            # Get allocated bytes in this mapping
+            allocated_in_mapping = memory_map.get_total_allocated()
+            
+            # Get number of coordinates this mapping covers
+            coordinate_count = len(signature.covered_coordinates)
+            
+            # Each coordinate in this mapping has the same allocation pattern
+            total_bytes += allocated_in_mapping * coordinate_count
+        
+        return total_bytes
+    
+    def total_requested_allocations(self) -> int:
+        """
+        Calculate the total number of bytes requested by all fulfilled requirements.
+        This sums the total_allocation_size() for all successfully allocated requirements.
+        Should equal total_allocated_bytes() for validation.
+        """
+        total_requested = 0
+        
+        for req in self.processed_requirements:
+            if req.is_fulfilled():
+                total_requested += req.total_allocation_size()
+        
+        return total_requested
     
     def print_requirements_summary(self):
         """Print a detailed summary of all requirements and their fulfillment status"""
@@ -815,6 +900,11 @@ def test_basic_serial_allocation():
     # Check stats - should still have one mapping
     stats = manager.get_memory_stats()
     assert stats['total_mappings'] == 1, f"Should still have one mapping, got {stats['total_mappings']}"
+    
+    # Validate that total requested matches total allocated
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     print("✓ Basic serial allocation test passed")
 
 
@@ -840,6 +930,11 @@ def test_pe_specific_forking():
     # Check stats - should now have two mappings (PE 0 coords + PE 1 coords)
     stats = manager.get_memory_stats()
     assert stats['total_mappings'] == 2, f"Should have two mappings after fork, got {stats['total_mappings']}"
+    
+    # Validate that total requested matches total allocated
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     print("✓ PE-specific allocation forking test passed")
 
 
@@ -865,6 +960,11 @@ def test_mss_specific_forking():
     # Check stats - should now have two mappings
     stats = manager.get_memory_stats()
     assert stats['total_mappings'] == 2, f"Should have two mappings after fork, got {stats['total_mappings']}"
+    
+    # Validate that total requested matches total allocated
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     print("✓ MSS-specific allocation forking test passed")
 
 
@@ -891,6 +991,11 @@ def test_slice_group_forking():
     # Check stats - should now have two mappings (group 0-3 + group 4-7)
     stats = manager.get_memory_stats()
     assert stats['total_mappings'] == 2, f"Should have two mappings after fork, got {stats['total_mappings']}"
+    
+    # Validate that total requested matches total allocated
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     print("✓ Slice group allocation forking test passed")
 
 
@@ -916,6 +1021,11 @@ def test_automatic_resource_selection():
     # Should have forked (one PE selected, other PE remains separate)
     stats = manager.get_memory_stats()
     assert stats['total_mappings'] == 2, f"Should have two mappings after auto-selection fork, got {stats['total_mappings']}"
+    
+    # Validate that total requested matches total allocated
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     print("✓ Automatic resource selection test passed")
 
 
@@ -944,6 +1054,10 @@ def test_complex_multiple_requirements():
     stats1 = manager.get_memory_stats()
     assert stats1['total_mappings'] == 1, f"Should still have one mapping after global alloc, got {stats1['total_mappings']}"
     
+    # Validate after first allocation
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed after req1: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     # Requirement 2: PE-specific allocation (should fork)
     req2 = MemoryRequirement(
         size=256,
@@ -959,6 +1073,10 @@ def test_complex_multiple_requirements():
     stats2 = manager.get_memory_stats()
     assert stats2['total_mappings'] == 2, f"Should have two mappings after PE fork, got {stats2['total_mappings']}"
     
+    # Validate after second allocation
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed after req2: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     # Requirement 3: MSS-specific allocation (should cause additional fork)
     req3 = MemoryRequirement(
         size=128,
@@ -973,6 +1091,10 @@ def test_complex_multiple_requirements():
     
     stats3 = manager.get_memory_stats()
     assert stats3['total_mappings'] >= 3, f"Should have at least three mappings after MSS fork, got {stats3['total_mappings']}"
+    
+    # Validate after third allocation
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed after req3: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
     
     # Requirement 4: Slice group allocation (should cause more forking)
     req4 = MemoryRequirement(
@@ -992,6 +1114,10 @@ def test_complex_multiple_requirements():
     
     # Should have multiple mappings due to various forks
     assert final_stats['total_mappings'] >= 4, f"Should have at least four mappings after all forks, got {final_stats['total_mappings']}"
+    
+    # Final validation after all allocations
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed after all allocations: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
     
     print("✓ Complex multiple requirements test passed")
 
@@ -1018,6 +1144,10 @@ def test_cross_mapping_allocation():
     stats1 = manager.get_memory_stats()
     assert stats1['total_mappings'] == 2, f"Should have two mappings after fork, got {stats1['total_mappings']}"
     
+    # Validate after first allocation
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed after fork allocation: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     # Now try allocation across all PEs (should span mappings)
     req2 = MemoryRequirement(
         size=256,
@@ -1029,6 +1159,11 @@ def test_cross_mapping_allocation():
     
     success2 = manager.allocate_requirement(req2)
     assert success2, "Cross-mapping allocation should succeed"
+    
+    # Final validation after cross-mapping allocation
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed after cross-mapping allocation: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     print("✓ Cross-mapping allocation test passed")
 
 
@@ -1049,6 +1184,11 @@ def test_allocation_failure():
     
     success = manager.allocate_requirement(req)
     assert not success, "Allocation should fail when insufficient memory"
+    
+    # Validate even when allocation fails (should both be 0)
+    assert manager.total_requested_allocations() == manager.total_allocated_bytes(), \
+        f"Validation failed for failed allocation: requested={manager.total_requested_allocations()} != allocated={manager.total_allocated_bytes()}"
+    
     print("✓ Allocation failure test passed")
 
 
