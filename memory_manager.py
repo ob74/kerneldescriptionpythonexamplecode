@@ -150,32 +150,20 @@ class MemoryRequirement:
         """
         dimension_sizes = self.get_dimension_sizes()
         
+        # Total coordinates = product of affected counts across all dimensions
+        total_coordinates = 1
+
         # Calculate affected count for each dimension based on scope
         affected_counts = []
         for i, dim_req in enumerate(self.dimension_reqs):
             if dim_req.scope == DimensionScope.ALL:
-                affected_counts.append(dimension_sizes[i])
-            elif dim_req.scope == DimensionScope.SPECIFIC:
-                # For SPECIFIC scope, always count as 1 regardless of whether value is resolved
-                affected_counts.append(1)
+                total_coordinates *= dimension_sizes[i]
             elif dim_req.scope == DimensionScope.GROUP:
-                # For GROUP scope, count the group size
-                group_values = dim_req._get_group_values(dim_req.group)
-                affected_counts.append(len(group_values))
-            else:
-                raise ValueError(f"Unknown scope: {dim_req.scope}")
-        
-        # Total coordinates = product of affected counts across all dimensions
-        total_coordinates = 1
-        for count in affected_counts:
-            total_coordinates *= count
-        
-        # For parallel allocation, the effective size per coordinate is divided by 4
-        effective_size = self.size
-        if self.allocation_mode == SliceAllocationMode.PARALLEL:
-            effective_size = self.size // 4
-        
-        return effective_size * total_coordinates
+                assert self.allocation_mode == SliceAllocationMode.PARALLEL
+            else: # SPECIFIC (no need to multiply)
+                pass
+           
+        return self.size * total_coordinates
     
     def mark_fulfilled(self, allocated_address: int, resolved_req: 'MemoryRequirement', mapping_count: int):
         """Mark this requirement as fulfilled with allocation details"""
